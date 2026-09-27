@@ -6,8 +6,9 @@ import { createClient } from '@/lib/supabase/server'
 
 // Verifies email links that carry a token hash. Unlike /auth/callback, this works
 // even when the link is opened in a different browser or device than the one used
-// to sign up. Requires the "Confirm signup" email template to link here:
-// {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email
+// to sign up. Requires the email templates to link here:
+//   Confirm signup: {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email
+//   Reset password: {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const token_hash = searchParams.get('token_hash')
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient()
     const { error } = await supabase.auth.verifyOtp({ type, token_hash })
     if (!error) {
-      redirect('/')
+      redirect(type === 'recovery' ? '/update-password' : '/')
     }
   }
 

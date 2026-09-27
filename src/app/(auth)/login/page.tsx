@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { LoginForm } from "@/components/auth/auth-forms";
+import { redirectIfSignedIn } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -11,6 +12,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
+  await redirectIfSignedIn();
   const { error } = await searchParams;
   const initialError = typeof error === "string" ? ERROR_MESSAGES[error] : undefined;
 

@@ -1,19 +1,12 @@
 import type { ReactNode } from "react";
-import { redirect } from "next/navigation";
 
 import { TrendingUpIcon } from "@/components/icons";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { createClient } from "@/lib/supabase/server";
 
-export default async function AuthLayout({ children }: { children: ReactNode }) {
-  // Already signed in? There's nothing to do on these pages.
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  if (data?.claims) {
-    redirect("/");
-  }
-
+// Shared shell for the auth pages. Each page does its own session check, since
+// layouts don't re-run when navigating between pages that share them.
+export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-1">
       <div className="flex flex-1 flex-col px-5 py-5 sm:px-10 sm:py-8">

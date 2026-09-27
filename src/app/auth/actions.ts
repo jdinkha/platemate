@@ -11,6 +11,7 @@ export type AuthFormState = {
   error?: string
   email?: string
   checkEmail?: boolean
+  passwordUpdated?: boolean
 }
 
 const MIN_PASSWORD_LENGTH = 8
@@ -35,6 +36,10 @@ function friendlyError(error: AuthError) {
       return 'That password is too weak. Try a longer one with a mix of characters.'
     case 'over_email_send_rate_limit':
       return 'Too many emails sent recently. Please wait a few minutes and try again.'
+    case 'same_password':
+      return 'Your new password must be different from your current one.'
+    case 'reauthentication_needed':
+      return 'For security, please sign in again before changing your password.'
     default:
       return error.message
   }
@@ -95,6 +100,51 @@ export async function signUpWithEmail(
 
   revalidatePath('/', 'layout')
   redirect('/')
+}
+
+export async function requestPasswordReset(
+  _prev: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  const email = String(formData.get('email') ?? '').trim()
+  if (!email) {
+    return { email, error: 'Enter your email address.' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${await getOrigin()}/auth/callback?next=/update-password`,
+  })
+  if (error) {
+    return { email, error: friendlyError(error) }
+  }
+
+  // Supabase reports success whether or not the account exists, so this
+  // can't be used to discover which emails are registered.
+  return { email, checkEmail: true }
+}
+
+export async function updatePassword(
+  _prev: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  const password = String(formData.get('password') ?? '')
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { error: `Use at least ${MIN_PASSWORD_LENGTH} characters for your password.` }
+  }
+
+  const supabase = await createClient()
+  const { data } = await supabase.auth.getClaims()
+  if (!data?.claims) {
+    return { error: 'Your reset link has expired. Please request a new one.' }
+  }
+
+  const { error } = await supabase.auth.updateUser({ password })
+  if (error) {
+    return { error: friendlyError(error) }
+  }
+
+  return { passwordUpdated: true }
 }
 
 export async function signInWithGoogle(): Promise<AuthFormState> {

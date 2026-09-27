@@ -48,6 +48,7 @@ export async function updateSession(request: NextRequest) {
     pathname === '/' ||
     pathname === '/login' ||
     pathname === '/signup' ||
+    pathname === '/forgot-password' ||
     pathname.startsWith('/auth')
 
   if (!user && !isPublic) {

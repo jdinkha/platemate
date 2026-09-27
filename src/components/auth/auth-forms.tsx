@@ -4,14 +4,17 @@ import Link from "next/link";
 import { useActionState, useState, type ReactNode } from "react";
 
 import {
+  requestPasswordReset,
   signInWithEmail,
   signInWithGoogle,
   signUpWithEmail,
+  updatePassword,
   type AuthFormState,
 } from "@/app/auth/actions";
 import {
   AlertIcon,
   ArrowRightIcon,
+  CheckIcon,
   EyeIcon,
   EyeOffIcon,
   GoogleIcon,
@@ -35,7 +38,17 @@ export function LoginForm({ initialError }: { initialError?: string }) {
       <Divider />
       <form action={formAction} className="space-y-4">
         <EmailField defaultValue={state.email} />
-        <PasswordField autoComplete="current-password" />
+        <PasswordField
+          autoComplete="current-password"
+          trailing={
+            <Link
+              href="/forgot-password"
+              className="text-sm text-muted-foreground underline-offset-4 transition hover:text-foreground hover:underline"
+            >
+              Forgot password?
+            </Link>
+          }
+        />
         <FormError message={state.error} />
         <SubmitButton pending={pending}>Sign in</SubmitButton>
       </form>
@@ -53,7 +66,21 @@ export function SignupForm() {
   );
 
   if (state.checkEmail) {
-    return <CheckYourEmail email={state.email} />;
+    return (
+      <StatusPanel
+        icon={<MailIcon className="size-7" />}
+        title="Check your inbox"
+        note="Can't find it? Check your spam folder, or give it a minute."
+        footer={
+          <>
+            Already confirmed? <TextLink href="/login">Sign in</TextLink>
+          </>
+        }
+      >
+        We sent a confirmation link to <Email address={state.email} />. Open it to activate your
+        account.
+      </StatusPanel>
+    );
   }
 
   return (
@@ -73,6 +100,82 @@ export function SignupForm() {
       <FooterPrompt>
         Already have an account? <TextLink href="/login">Sign in</TextLink>
       </FooterPrompt>
+    </>
+  );
+}
+
+export function ForgotPasswordForm() {
+  const [state, formAction, pending] = useActionState<AuthFormState, FormData>(
+    requestPasswordReset,
+    {}
+  );
+
+  if (state.checkEmail) {
+    return (
+      <StatusPanel
+        icon={<MailIcon className="size-7" />}
+        title="Check your inbox"
+        note="Can't find it? Check your spam folder, or give it a minute."
+        footer={<TextLink href="/login">Back to sign in</TextLink>}
+      >
+        If there&apos;s an account for <Email address={state.email} />, we&apos;ve sent it a link
+        to set a new password.
+      </StatusPanel>
+    );
+  }
+
+  return (
+    <>
+      <Heading
+        title="Reset your password"
+        subtitle="Enter your account email and we'll send you a link to set a new one."
+      />
+      <form action={formAction} className="space-y-4">
+        <EmailField defaultValue={state.email} />
+        <FormError message={state.error} />
+        <SubmitButton pending={pending}>Send reset link</SubmitButton>
+      </form>
+      <FooterPrompt>
+        Remembered it? <TextLink href="/login">Sign in</TextLink>
+      </FooterPrompt>
+    </>
+  );
+}
+
+export function UpdatePasswordForm() {
+  const [state, formAction, pending] = useActionState<AuthFormState, FormData>(
+    updatePassword,
+    {}
+  );
+
+  if (state.passwordUpdated) {
+    return (
+      <StatusPanel
+        icon={<CheckIcon className="size-7" strokeWidth={2.5} />}
+        title="Password updated"
+        footer={<TextLink href="/">Continue to PlateMate</TextLink>}
+      >
+        You&apos;re signed in, and your new password is ready for next time.
+      </StatusPanel>
+    );
+  }
+
+  return (
+    <>
+      <Heading
+        title="Choose a new password"
+        subtitle="You'll use it the next time you sign in with email."
+      />
+      <form action={formAction} className="space-y-4">
+        <PasswordField
+          autoComplete="new-password"
+          label="New password"
+          minLength={8}
+          hint="At least 8 characters"
+        />
+        <FormError message={state.error} />
+        <SubmitButton pending={pending}>Update password</SubmitButton>
+      </form>
     </>
   );
 }
@@ -137,12 +240,16 @@ function EmailField({ defaultValue }: { defaultValue?: string }) {
 
 function PasswordField({
   autoComplete,
+  label = "Password",
   minLength,
   hint,
+  trailing,
 }: {
   autoComplete: "current-password" | "new-password";
+  label?: string;
   minLength?: number;
   hint?: string;
+  trailing?: ReactNode;
 }) {
   const [visible, setVisible] = useState(false);
 
@@ -150,13 +257,14 @@ function PasswordField({
     <div className="space-y-2">
       <div className="flex items-baseline justify-between">
         <label htmlFor="password" className="text-sm font-medium">
-          Password
+          {label}
         </label>
         {hint && (
           <span id="password-hint" className="text-xs text-muted-foreground">
             {hint}
           </span>
         )}
+        {trailing}
       </div>
       <div className="relative">
         <input
@@ -226,24 +334,32 @@ function TextLink({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
-function CheckYourEmail({ email }: { email?: string }) {
+function StatusPanel({
+  icon,
+  title,
+  children,
+  note,
+  footer,
+}: {
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+  note?: string;
+  footer: ReactNode;
+}) {
   return (
     <div className="text-center">
       <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-accent text-accent-foreground shadow-sm ring-1 ring-black/10">
-        <MailIcon className="size-7" />
+        {icon}
       </div>
-      <h1 className="mt-8 text-3xl font-semibold tracking-tight">Check your inbox</h1>
-      <p className="mt-3 text-muted-foreground">
-        We sent a confirmation link to{" "}
-        <span className="font-medium text-foreground">{email ?? "your email"}</span>. Open it to
-        activate your account.
-      </p>
-      <p className="mt-6 text-sm text-muted-foreground">
-        Can&apos;t find it? Check your spam folder, or give it a minute.
-      </p>
-      <FooterPrompt>
-        Already confirmed? <TextLink href="/login">Sign in</TextLink>
-      </FooterPrompt>
+      <h1 className="mt-8 text-3xl font-semibold tracking-tight">{title}</h1>
+      <p className="mt-3 text-muted-foreground">{children}</p>
+      {note && <p className="mt-6 text-sm text-muted-foreground">{note}</p>}
+      <FooterPrompt>{footer}</FooterPrompt>
     </div>
   );
+}
+
+function Email({ address }: { address?: string }) {
+  return <span className="font-medium text-foreground">{address ?? "your email"}</span>;
 }
