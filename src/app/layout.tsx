@@ -41,6 +41,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <head>
+        {/* The site has its own dark mode, so ask the Dark Reader extension not to
+            restyle it. Its edits to SVG attributes also cause hydration mismatches. */}
+        <meta name="darkreader-lock" />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="flex min-h-full flex-col font-sans">{children}</body>
