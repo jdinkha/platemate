@@ -6,6 +6,8 @@ see today's workout
 log capability (sets/reps/weight/exercise)
 view previous workouts
 see missed days
+demo page to try it out
+vercel redirect supabase and gogole setting
 
 notifications
 ai chatbot

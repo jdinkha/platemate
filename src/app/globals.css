@@ -1,26 +1,101 @@
 @import "tailwindcss";
 
+/* Dark mode is driven by a `.dark` class on <html> (set by the theme toggle),
+   falling back to the OS preference until the user picks one. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f7f2;
+  --foreground: #0c0d0a;
+  --card: #ffffff;
+  --muted: #efefe7;
+  --muted-foreground: #5e6258;
+  --border: #e3e3d9;
+  --primary: #0c0d0a;
+  --primary-foreground: #fafaf5;
+  --accent: #c8f031;
+  --accent-foreground: #0c0d0a;
+  --accent-ink: #4d7c0f;
+  --danger: #dc2626;
+  color-scheme: light;
+}
+
+.dark {
+  --background: #0a0b09;
+  --foreground: #f2f3ed;
+  --card: #121410;
+  --muted: #1a1c17;
+  --muted-foreground: #9a9f90;
+  --border: #272a22;
+  --primary: #d4ff3a;
+  --primary-foreground: #0a0b09;
+  --accent: #d4ff3a;
+  --accent-foreground: #0a0b09;
+  --accent-ink: #d4ff3a;
+  --danger: #f87171;
+  color-scheme: dark;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-ink: var(--accent-ink);
+  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@theme {
+  --animate-fade-up: fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-marquee: marquee 45s linear infinite;
+  --animate-float: float 6s ease-in-out infinite;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
+
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  @keyframes float {
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+}
+
+/* Faint graph-paper backdrop; override --grid-line to recolor it. */
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, var(--grid-line, var(--border)) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line, var(--border)) 1px, transparent 1px);
+  background-size: 44px 44px;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
