@@ -42,3 +42,7 @@ __pycache__/
 .env
 .env.local
 note.txt
+
+# Next.js build output and dependencies
+.next/
+node_modules/
