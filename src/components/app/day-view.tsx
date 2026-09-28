@@ -10,11 +10,11 @@ import { ProgressRing } from "@/components/progress-ring";
 import { getLastSessions, getSessions, getSets } from "@/lib/data";
 import { addDays, eachDay, formatDate, startOfWeek } from "@/lib/dates";
 import {
-  dayStatus,
-  planFor,
-  scheduledDay,
+  buildCalendar,
+  sessionsNeededFrom,
   volumeOf,
   workoutForDay,
+  type Calendar,
   type PlanHistory,
   type Profile,
 } from "@/lib/training";
@@ -39,15 +39,17 @@ export async function DayView({ userId, profile, history, date, today, choice, e
   const unit = profile.unit_preference;
   const weekStart = startOfWeek(date, profile.week_starts_on);
   const weekEnd = addDays(weekStart, 6);
-  const sessions = await getSessions(userId, weekStart, weekEnd);
+  const sessions = await getSessions(userId, sessionsNeededFrom(history, weekStart), weekEnd);
+  const calendar = buildCalendar(history, sessions, today);
 
   const sessionsByDate = new Map(sessions.map((session) => [session.date, session]));
   const session = sessionsByDate.get(date);
-  const plan = planFor(history, date);
-  const status = dayStatus(date, today, history, session);
+  const plan = calendar.planned(date).plan;
+  const isLoop = plan?.scheduleType === "loop";
+  const status = calendar.status(date, session);
 
   const week: WeekDay[] = eachDay(weekStart, weekEnd).map((day) => {
-    const dayState = dayStatus(day, today, history, sessionsByDate.get(day));
+    const dayState = calendar.status(day, sessionsByDate.get(day));
     const openable = day <= today && dayState !== "untracked";
     return {
       date: day,
@@ -73,8 +75,12 @@ export async function DayView({ userId, profile, history, date, today, choice, e
         <Panel icon={isBreak ? <MoonIcon className="size-6" /> : <SkipIcon className="size-6" />}>
           <p className="text-muted-foreground">
             {isBreak
-              ? "Breaks don't count against your consistency. Rest up and come back strong."
-              : "Skipped days count as missed in your diary. Changed your mind? Undo it and log your sets."}
+              ? `Breaks don't count against your consistency.${
+                  isLoop && planned ? ` ${planned} will still be next when you're back.` : " Rest up and come back strong."
+                }`
+              : `Skipped days count as missed in your diary${
+                  isLoop ? ", and your loop moves on to what's next" : ""
+                }. Changed your mind? Undo it and log your sets.`}
           </p>
           <div className="mt-5">
             <UndoDayStatusButton date={date} />
@@ -84,11 +90,11 @@ export async function DayView({ userId, profile, history, date, today, choice, e
     );
   }
 
-  const { plan: workoutPlan, day } = workoutForDay(date, history, session, choice);
+  const { plan: workoutPlan, day } = workoutForDay(date, history, calendar, session, choice);
 
   // A rest day with no workout chosen.
   if (!day || !workoutPlan) {
-    const next = nextWorkout(history, date);
+    const next = nextWorkout(calendar, date);
     return (
       <DayLayout
         eyebrow={eyebrow}
@@ -235,11 +241,11 @@ function Panel({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   );
 }
 
-/** The next scheduled workout within a week after `date`. */
-function nextWorkout(history: PlanHistory, date: string) {
-  for (let offset = 1; offset <= 7; offset++) {
+/** The next planned workout within four weeks after `date`. */
+function nextWorkout(calendar: Calendar, date: string) {
+  for (let offset = 1; offset <= 28; offset++) {
     const day = addDays(date, offset);
-    const workout = scheduledDay(planFor(history, day), day);
+    const workout = calendar.planned(day).day;
     if (workout) return { name: workout.name, date: day };
   }
   return undefined;

@@ -3,17 +3,12 @@
 import Link from "next/link";
 import { useOptimistic, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 
-import {
-  updatePreferences,
-  updateSchedule,
-  updateSplit,
-  type ActionResult,
-} from "@/app/(app)/actions";
+import { updatePreferences, updateSplit, type ActionResult } from "@/app/(app)/actions";
 import { signOut } from "@/app/auth/actions";
 import { OptionGroup, SplitPicker } from "@/components/app/pickers";
+import { ScheduleEditor, type ScheduleEditorProps } from "@/components/app/schedule-editor";
 import { AlertIcon, CheckIcon, ChevronDownIcon, LogOutIcon, SpinnerIcon } from "@/components/icons";
-import { weekdayLabels } from "@/lib/dates";
-import { GOALS, REST, getSplit } from "@/lib/splits";
+import { GOALS } from "@/lib/splits";
 import {
   applyThemePreference,
   readThemePreference,
@@ -24,19 +19,19 @@ import type { Profile } from "@/lib/training";
 
 type Props = {
   profile: Profile;
+  /** The current split (a new one starts with each change of split or schedule). */
+  splitId: string;
   /** The built-in split the current split came from. */
   templateKey: string | null;
-  /** The current split's workouts, in order. */
-  days: { id: string; name: string }[];
-  /** The workout on each weekday (0 = Sunday), or null for rest. */
-  schedule: (string | null)[];
+  schedule: Omit<ScheduleEditorProps, "weekStartsOn" | "today" | "disabled" | "save">;
+  today: string;
   email?: string;
   timeZones: string[];
 };
 
 type SaveStatus = { state: "idle" } | { state: "saving" } | { state: "saved" } | { state: "error"; message: string };
 
-export function SettingsForm({ profile, templateKey, days, schedule, email, timeZones }: Props) {
+export function SettingsForm({ profile, splitId, templateKey, schedule, today, email, timeZones }: Props) {
   const [status, setStatus] = useState<SaveStatus>({ state: "idle" });
   const [, startTransition] = useTransition();
   const [switchingSplit, startSplitTransition] = useTransition();
@@ -44,7 +39,6 @@ export function SettingsForm({ profile, templateKey, days, schedule, email, time
   // Each control shows the new value immediately and settles on the saved
   // value when the page refreshes, snapping back by itself if saving fails.
   const [shownTemplate, showTemplate] = useOptimistic(templateKey);
-  const [shownSchedule, showSchedule] = useOptimistic(schedule);
   const [goal, showGoal] = useOptimistic(profile.goal);
   const [unit, showUnit] = useOptimistic(profile.unit_preference);
   const [weekStartsOn, showWeekStartsOn] = useOptimistic(profile.week_starts_on);
@@ -65,29 +59,11 @@ export function SettingsForm({ profile, templateKey, days, schedule, email, time
     });
   }
 
-  // The template's default week, as workout ids by weekday. Workouts keep the template's order.
-  const template = getSplit(templateKey);
-  const defaultSchedule =
-    template && template.workouts.length === days.length
-      ? Array.from({ length: 7 }, (_, weekday) => {
-          const key = template.schedule[(weekday + 6) % 7];
-          return key === REST ? null : (days[template.workouts.findIndex((workout) => workout.key === key)]?.id ?? null);
-        })
-      : undefined;
-
-  const dayOrder = Array.from({ length: 7 }, (_, i) => (weekStartsOn + i) % 7);
-  const dayNames = weekdayLabels(weekStartsOn, "long");
-  const trainingDays = shownSchedule.filter(Boolean).length;
-
-  function changeSchedule(next: (string | null)[]) {
-    save(() => updateSchedule(next), () => showSchedule(next));
-  }
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-4xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-2 text-muted-foreground">Changes save automatically.</p>
+        <p className="mt-2 text-muted-foreground">Most changes save as you make them.</p>
       </div>
       <SaveIndicator status={status} />
 
@@ -105,53 +81,22 @@ export function SettingsForm({ profile, templateKey, days, schedule, email, time
       </Section>
 
       <Section
-        title="Weekly schedule"
+        title="Schedule"
         description={
           switchingSplit
             ? "Setting up your new split…"
-            : `${trainingDays} training ${trainingDays === 1 ? "day" : "days"} a week. Pick what happens on each day.`
-        }
-        action={
-          defaultSchedule && !switchingSplit && shownSchedule.join() !== defaultSchedule.join() ? (
-            <button
-              type="button"
-              onClick={() => changeSchedule(defaultSchedule)}
-              className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Reset to default
-            </button>
-          ) : undefined
+            : "Train on the same weekdays every week, or follow a loop that doesn't care what day it is."
         }
       >
-        <ul
-          aria-busy={switchingSplit}
-          className={`divide-y divide-border rounded-2xl border border-border transition-opacity ${
-            switchingSplit ? "pointer-events-none opacity-50" : ""
-          }`}
-        >
-          {dayOrder.map((weekday, position) => (
-            <li key={weekday} className="flex items-center justify-between gap-4 px-4 py-2.5">
-              <label htmlFor={`day-${weekday}`} className="text-sm font-medium">
-                {dayNames[position]}
-              </label>
-              <Select
-                id={`day-${weekday}`}
-                value={shownSchedule[weekday] ?? REST}
-                disabled={switchingSplit}
-                onChange={(value) =>
-                  changeSchedule(shownSchedule.map((dayId, i) => (i === weekday ? (value === REST ? null : value) : dayId)))
-                }
-              >
-                <option value={REST}>Rest</option>
-                {days.map((day) => (
-                  <option key={day.id} value={day.id}>
-                    {day.name}
-                  </option>
-                ))}
-              </Select>
-            </li>
-          ))}
-        </ul>
+        {/* A saved schedule starts a new split, so start a fresh draft from it. */}
+        <ScheduleEditor
+          key={splitId}
+          {...schedule}
+          weekStartsOn={weekStartsOn}
+          today={today}
+          disabled={switchingSplit}
+          save={(action) => save(action, () => {})}
+        />
       </Section>
 
       <Section title="Goal" description="Sets the target sets and reps for each exercise in your split.">

@@ -42,6 +42,9 @@ type PlanRow = {
   template_key: string | null
   active_from: string | null
   created_at: string
+  schedule_type: 'weekly' | 'loop'
+  loop_start: number
+  split_loop_entries: { position: number; split_day_id: string | null }[]
   split_days: {
     id: string
     name: string | null
@@ -63,7 +66,8 @@ export const getPlanHistory = cache(async (userId: string) => {
   const { data, error } = await supabase
     .from('splits')
     .select(
-      `id, name, template_key, active_from, created_at,
+      `id, name, template_key, active_from, created_at, schedule_type, loop_start,
+       split_loop_entries (position, split_day_id),
        split_days (id, name, position,
          split_day_schedule (weekday),
          split_day_exercises (exercise_id, position, target_sets, target_reps, exercises (name)))`
@@ -72,13 +76,8 @@ export const getPlanHistory = cache(async (userId: string) => {
   check(error)
 
   // Without generated types supabase-js assumes embeds are arrays; `exercises` is many-to-one, so an object.
-  const plans: Plan[] = ((data ?? []) as unknown as PlanRow[]).map((row) => ({
-    id: row.id,
-    name: row.name ?? 'Split',
-    templateKey: row.template_key,
-    activeFrom: row.active_from,
-    createdAt: row.created_at,
-    days: sortByPosition(
+  const plans: Plan[] = ((data ?? []) as unknown as PlanRow[]).map((row) => {
+    const days = sortByPosition(
       row.split_days.map((day) => ({
         id: day.id,
         name: day.name ?? 'Workout',
@@ -94,8 +93,21 @@ export const getPlanHistory = cache(async (userId: string) => {
           }))
         ),
       }))
-    ),
-  }))
+    )
+    return {
+      id: row.id,
+      name: row.name ?? 'Split',
+      templateKey: row.template_key,
+      activeFrom: row.active_from,
+      createdAt: row.created_at,
+      days,
+      scheduleType: row.schedule_type,
+      loop: sortByPosition(row.split_loop_entries).map((entry) =>
+        entry.split_day_id ? (days.find((day) => day.id === entry.split_day_id) ?? null) : null
+      ),
+      loopStart: row.loop_start,
+    }
+  })
   return buildPlanHistory(plans)
 })
 

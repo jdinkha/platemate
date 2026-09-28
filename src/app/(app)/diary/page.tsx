@@ -8,11 +8,11 @@ import { getSessions, getSets } from "@/lib/data";
 import { addMonths, eachDay, formatMonth, isValidMonth, monthBounds, monthOf } from "@/lib/dates";
 import type { WeightUnit } from "@/lib/splits";
 import {
-  dayStatus,
-  planFor,
-  scheduledDay,
+  buildCalendar,
+  sessionsNeededFrom,
   trackingStart,
   volumeOf,
+  type Calendar,
   type DayStatus,
   type PlanHistory,
   type Session,
@@ -35,16 +35,19 @@ export default async function DiaryPage({ searchParams }: PageProps<"/diary">) {
   const bounds = monthBounds(month);
   const from = bounds.start < start ? start : bounds.start;
   const to = bounds.end > today ? today : bounds.end;
-  const sessions = from <= to ? await getSessions(user.id, from, to) : [];
-  const sets = await getSets(sessions.filter((session) => session.status === "completed").map((session) => session.id));
+  // Loops need sessions from before the month to know where they stand.
+  const sessions = from <= to ? await getSessions(user.id, sessionsNeededFrom(history, from), to) : [];
+  const calendar = buildCalendar(history, sessions, today);
+  const inMonth = sessions.filter((session) => session.date >= from);
+  const sets = await getSets(inMonth.filter((session) => session.status === "completed").map((session) => session.id));
 
-  const sessionsByDate = new Map(sessions.map((session) => [session.date, session]));
+  const sessionsByDate = new Map(inMonth.map((session) => [session.date, session]));
   const setsBySession = Map.groupBy(sets, (set) => set.session_id);
   const days =
     from <= to
       ? eachDay(from, to).map((date) => {
           const session = sessionsByDate.get(date);
-          return summarize(date, today, history, session, (session && setsBySession.get(session.id)) ?? [], unit);
+          return summarize(date, history, calendar, session, (session && setsBySession.get(session.id)) ?? [], unit);
         })
       : [];
   const byDate = new Map(days.map((day) => [day.date, day]));
@@ -121,14 +124,14 @@ export default async function DiaryPage({ searchParams }: PageProps<"/diary">) {
 
 function summarize(
   date: string,
-  today: string,
   history: PlanHistory,
+  calendar: Calendar,
   session: Session | undefined,
   sets: SetLog[],
   unit: WeightUnit
 ): DaySummary {
-  const status = dayStatus(date, today, history, session);
-  const planned = scheduledDay(planFor(history, date), date);
+  const status = calendar.status(date, session);
+  const planned = calendar.planned(date).day;
   // The workout recorded on the session, else the one the split scheduled.
   const recorded = session?.split_day_id ? history.days.get(session.split_day_id)?.day.name : undefined;
   const plannedName = recorded ?? planned?.name;

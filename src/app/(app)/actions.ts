@@ -4,11 +4,11 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { getCurrentUser } from '@/lib/auth'
-import { getPlanHistory, getProfile } from '@/lib/data'
+import { getPlanHistory, getProfile, getSessions } from '@/lib/data'
 import { isValidISODate, isValidTimeZone, todayIn } from '@/lib/dates'
 import { GOALS, REST, getSplit, targetFor, type Goal, type Split, type WeightUnit } from '@/lib/splits'
 import { createClient } from '@/lib/supabase/server'
-import { planFor, scheduledDay, trackingStart, type Plan } from '@/lib/training'
+import { buildCalendar, planFor, sessionsNeededFrom, trackingStart, type Plan } from '@/lib/training'
 import { toKg } from '@/lib/units'
 
 // Every action re-checks the session and validates its input: server actions
@@ -77,17 +77,58 @@ async function ensureExercises(supabase: Supabase, userId: string, names: string
   return new Map((data ?? []).map((exercise) => [exercise.name as string, exercise.id as string]))
 }
 
+/**
+ * How a split's workouts fall on days: a workout id (or null for rest) for each
+ * weekday (0 = Sunday), or a loop of them with the position to start on.
+ */
+type Arrangement =
+  | { type: 'weekly'; schedule: (string | null)[] }
+  | { type: 'loop'; entries: (string | null)[]; start: number }
+
+async function insertArrangement(supabase: Supabase, splitId: string, arrangement: Arrangement) {
+  if (arrangement.type === 'weekly') {
+    must(
+      await supabase
+        .from('split_day_schedule')
+        .insert(arrangement.schedule.flatMap((dayId, weekday) => (dayId ? [{ split_day_id: dayId, weekday }] : [])))
+    )
+  } else {
+    must(
+      await supabase
+        .from('split_loop_entries')
+        .insert(arrangement.entries.map((dayId, position) => ({ split_id: splitId, position, split_day_id: dayId })))
+    )
+  }
+}
+
+function splitRow(userId: string, name: string, templateKey: string | null, arrangement: Arrangement) {
+  return {
+    user_id: userId,
+    name,
+    template_key: templateKey,
+    schedule_type: arrangement.type,
+    loop_start: arrangement.type === 'loop' ? arrangement.start : 0,
+  }
+}
+
 /** Copies a built-in split into the user's tables. It isn't active until activateSplit runs. */
-async function createSplitFromTemplate(supabase: Supabase, userId: string, template: Split, goal: Goal) {
+async function createSplitFromTemplate(
+  supabase: Supabase,
+  userId: string,
+  template: Split,
+  goal: Goal,
+  mode: Arrangement['type']
+) {
   const exerciseIds = await ensureExercises(
     supabase,
     userId,
     template.workouts.flatMap((workout) => workout.exercises.map((exercise) => exercise.name))
   )
+  const placeholder: Arrangement = mode === 'loop' ? { type: 'loop', entries: [], start: 0 } : { type: 'weekly', schedule: [] }
   const { data: split } = must(
     await supabase
       .from('splits')
-      .insert({ user_id: userId, name: template.name, template_key: template.id })
+      .insert(splitRow(userId, template.name, template.id, placeholder))
       .select('id')
       .single()
   )
@@ -117,23 +158,24 @@ async function createSplitFromTemplate(supabase: Supabase, userId: string, templ
       )
     )
   )
-  // Templates list the week Monday first; split_day_schedule uses 0 = Sunday.
-  must(
-    await supabase.from('split_day_schedule').insert(
-      template.schedule.flatMap((key, mondayIndex) =>
-        key === REST ? [] : [{ split_day_id: dayIds.get(key), weekday: (mondayIndex + 1) % 7 }]
-      )
-    )
+  const toId = (key: string) => (key === REST ? null : dayIds.get(key)!)
+  await insertArrangement(
+    supabase,
+    split!.id,
+    mode === 'loop'
+      ? { type: 'loop', entries: template.loop.map(toId), start: 0 }
+      : // Templates list the week Monday first; split_day_schedule uses 0 = Sunday.
+        { type: 'weekly', schedule: Array.from({ length: 7 }, (_, weekday) => toId(template.schedule[(weekday + 6) % 7])) }
   )
   return split!.id as string
 }
 
-/** Copies a split with a new weekly schedule. `schedule[weekday]` is a day id or null for rest. */
-async function copySplit(supabase: Supabase, userId: string, plan: Plan, schedule: (string | null)[]) {
+/** Copies a split with a new arrangement, which refers to the original split's day ids. */
+async function copySplit(supabase: Supabase, userId: string, plan: Plan, arrangement: Arrangement) {
   const { data: split } = must(
     await supabase
       .from('splits')
-      .insert({ user_id: userId, name: plan.name, template_key: plan.templateKey })
+      .insert(splitRow(userId, plan.name, plan.templateKey, arrangement))
       .select('id')
       .single()
   )
@@ -155,10 +197,14 @@ async function copySplit(supabase: Supabase, userId: string, plan: Plan, schedul
     }))
   )
   if (exercises.length > 0) must(await supabase.from('split_day_exercises').insert(exercises))
-  must(
-    await supabase
-      .from('split_day_schedule')
-      .insert(schedule.flatMap((dayId, weekday) => (dayId ? [{ split_day_id: newIds.get(dayId), weekday }] : [])))
+
+  const toNew = (dayId: string | null) => (dayId ? newIds.get(dayId)! : null)
+  await insertArrangement(
+    supabase,
+    split!.id,
+    arrangement.type === 'weekly'
+      ? { type: 'weekly', schedule: arrangement.schedule.map(toNew) }
+      : { type: 'loop', entries: arrangement.entries.map(toNew), start: arrangement.start }
   )
   return split!.id as string
 }
@@ -236,7 +282,7 @@ export async function completeOnboarding(_prev: ActionResult, formData: FormData
         { onConflict: 'id' }
       )
     )
-    const splitId = await createSplitFromTemplate(supabase, user.id, template, goal)
+    const splitId = await createSplitFromTemplate(supabase, user.id, template, goal, 'weekly')
     await activateSplit({ supabase, userId: user.id, today }, splitId)
   } catch {
     return FAILED
@@ -254,7 +300,14 @@ export async function updateSplit(templateId: string): Promise<ActionResult> {
   if (context.current.templateKey === template.id) return {}
 
   try {
-    const splitId = await createSplitFromTemplate(context.supabase, context.userId, template, context.profile.goal)
+    // Keep whichever kind of schedule the user is on.
+    const splitId = await createSplitFromTemplate(
+      context.supabase,
+      context.userId,
+      template,
+      context.profile.goal,
+      context.current.scheduleType
+    )
     await activateSplit(context, splitId)
   } catch {
     return FAILED
@@ -277,9 +330,9 @@ export async function updateSchedule(schedule: (string | null)[]): Promise<Actio
   if (schedule.every((dayId) => dayId === null)) return { error: 'Keep at least one training day in your week.' }
 
   try {
-    if (current.activeFrom !== today) {
+    if (current.activeFrom !== today || current.scheduleType === 'loop') {
       // Earlier days must keep the old schedule, so the change goes into a copy starting today.
-      const splitId = await copySplit(supabase, userId, current, schedule)
+      const splitId = await copySplit(supabase, userId, current, { type: 'weekly', schedule })
       await activateSplit(context, splitId)
     } else {
       // The split started today, so it can be edited in place. Add before removing so no
@@ -306,6 +359,37 @@ export async function updateSchedule(schedule: (string | null)[]): Promise<Actio
         )
       }
     }
+  } catch {
+    return FAILED
+  }
+  return done()
+}
+
+/**
+ * Switches to (or edits) a loop. `entries` are workout ids from the current
+ * split, or null for rest; `start` is the entry for today.
+ */
+export async function updateLoop(entries: (string | null)[], start: number): Promise<ActionResult> {
+  const context = await loadContext()
+  if (!context) return SIGNED_OUT
+  const { current, supabase, userId } = context
+
+  const dayIds = new Set(current.days.map((day) => day.id))
+  const valid =
+    Array.isArray(entries) &&
+    entries.length >= 1 &&
+    entries.length <= 28 &&
+    entries.every((dayId) => dayId === null || (typeof dayId === 'string' && dayIds.has(dayId))) &&
+    Number.isInteger(start) &&
+    start >= 0 &&
+    start < entries.length
+  if (!valid) return FAILED
+  if (entries.every((dayId) => dayId === null)) return { error: 'Add at least one workout to your loop.' }
+
+  // Loops are always saved as a new split starting today, so earlier days keep their schedule.
+  try {
+    const splitId = await copySplit(supabase, userId, current, { type: 'loop', entries, start })
+    await activateSplit(context, splitId)
   } catch {
     return FAILED
   }
@@ -493,7 +577,7 @@ export async function setDayStatus(date: string, status: 'break' | 'skipped' | n
   if (status !== null && status !== 'break' && status !== 'skipped') return FAILED
 
   try {
-    const { supabase, userId, history } = context
+    const { supabase, userId, history, today } = context
     const { data: session } = must(
       await supabase.from('workout_sessions').select('id').eq('user_id', userId).eq('date', date).maybeSingle()
     )
@@ -509,7 +593,10 @@ export async function setDayStatus(date: string, status: 'break' | 'skipped' | n
       return done()
     }
 
-    const fields = { status, split_day_id: scheduledDay(planFor(history, date), date)?.id ?? null, completed_at: null }
+    // Record the workout that was planned. In a loop that depends on the days before it.
+    const sessions = await getSessions(userId, sessionsNeededFrom(history, date), date)
+    const planned = buildCalendar(history, sessions, today).planned(date).day
+    const fields = { status, split_day_id: planned?.id ?? null, completed_at: null }
     if (session) must(await supabase.from('workout_sessions').update(fields).eq('id', session.id))
     else must(await supabase.from('workout_sessions').insert({ user_id: userId, date, ...fields }))
   } catch {

@@ -1,4 +1,4 @@
-import { dayOfWeek } from '@/lib/dates'
+import { addDays, dayOfWeek } from '@/lib/dates'
 import type { Goal, WeightUnit } from '@/lib/splits'
 import { totalFromKg } from '@/lib/units'
 
@@ -39,6 +39,12 @@ export type Plan = {
   activeFrom: string | null
   createdAt: string
   days: PlanDay[]
+  /** 'weekly' uses each day's weekdays; 'loop' repeats `loop` in order. */
+  scheduleType: 'weekly' | 'loop'
+  /** The loop in order; null entries are rest days. */
+  loop: (PlanDay | null)[]
+  /** The loop position on `activeFrom`. */
+  loopStart: number
 }
 
 export type PlanHistory = {
@@ -105,36 +111,117 @@ export function scheduledDay(plan: Plan | undefined, date: string) {
   return plan?.days.find((day) => day.weekdays.includes(weekday))
 }
 
-export function dayStatus(date: string, today: string, history: PlanHistory, session?: Session): DayStatus {
-  const start = trackingStart(history)
-  if (!start || date < start) return 'untracked'
-  if (session?.status === 'completed') return 'trained'
-  if (session?.status === 'break') return 'break'
-  if (session?.status === 'skipped') return 'skipped'
-  if (!scheduledDay(planFor(history, date), date)) return 'rest'
-  return date < today ? 'missed' : 'planned'
+export type Calendar = {
+  /** What the schedule has planned on `date`: a workout, or no `day` for a rest day. */
+  planned(date: string): { plan?: Plan; day?: PlanDay }
+  status(date: string, session?: Session): DayStatus
+  /** Where a loop is on `date` (0-based), or undefined on a weekly schedule. */
+  loopIndex(date: string): number | undefined
+}
+
+/**
+ * The first date whose sessions are needed to work out days from `from`
+ * onwards: a loop's position depends on everything since it started.
+ */
+export function sessionsNeededFrom(history: PlanHistory, from: string) {
+  const plan = planFor(history, from)
+  return plan?.scheduleType === 'loop' && plan.activeFrom! < from ? plan.activeFrom! : from
+}
+
+/**
+ * Resolves the schedule day by day. `sessions` must cover every date asked
+ * about, back to sessionsNeededFrom().
+ *
+ * Loops: rest days always pass. A missed workout, or a break, keeps the same
+ * workout next; skipping moves on. Finishing a workout continues the loop
+ * from the workout actually done. Days after today assume the plan is followed.
+ */
+export function buildCalendar(history: PlanHistory, sessions: Session[], today: string): Calendar {
+  const sessionsByDate = new Map(sessions.map((session) => [session.date, session]))
+  // Per loop split: the furthest date worked out so far and the position on it.
+  const progress = new Map<string, { date: string; position: number }>()
+
+  function next(plan: Plan, position: number, date: string) {
+    const length = plan.loop.length
+    const session = sessionsByDate.get(date)
+    if (date > today || (date === today && !session)) return (position + 1) % length
+
+    if (session?.status === 'completed') {
+      const done = session.split_day_id ? history.days.get(session.split_day_id)?.day.name : undefined
+      for (let offset = 0; done && offset < length; offset++) {
+        const index = (position + offset) % length
+        if (plan.loop[index]?.name === done) return (index + 1) % length
+      }
+      return (position + 1) % length
+    }
+    const isRest = !plan.loop[position]
+    return isRest || session?.status === 'skipped' ? (position + 1) % length : position
+  }
+
+  function loopPosition(plan: Plan, date: string) {
+    let state = progress.get(plan.id)
+    if (!state || state.date > date) {
+      state = { date: plan.activeFrom!, position: plan.loopStart % plan.loop.length }
+    }
+    let { date: day, position } = state
+    while (day < date) {
+      position = next(plan, position, day)
+      day = addDays(day, 1)
+    }
+    progress.set(plan.id, { date: day, position })
+    return position
+  }
+
+  function planned(date: string) {
+    const plan = planFor(history, date)
+    if (!plan) return {}
+    if (plan.scheduleType === 'loop' && plan.loop.length > 0 && date >= plan.activeFrom!) {
+      return { plan, day: plan.loop[loopPosition(plan, date)] ?? undefined }
+    }
+    return { plan, day: scheduledDay(plan, date) }
+  }
+
+  function status(date: string, session?: Session): DayStatus {
+    const start = trackingStart(history)
+    if (!start || date < start) return 'untracked'
+    if (session?.status === 'completed') return 'trained'
+    if (session?.status === 'break') return 'break'
+    if (session?.status === 'skipped') return 'skipped'
+    if (!planned(date).day) return 'rest'
+    return date < today ? 'missed' : 'planned'
+  }
+
+  function loopIndex(date: string) {
+    const plan = planFor(history, date)
+    return plan?.scheduleType === 'loop' && plan.loop.length > 0 && date >= plan.activeFrom!
+      ? loopPosition(plan, date)
+      : undefined
+  }
+
+  return { planned, status, loopIndex }
 }
 
 /**
  * Which workout to show for a day: an explicit choice (`?workout=`), then
- * whatever was already logged that day, then what the split schedules.
+ * whatever was already logged that day, then what the schedule plans.
  */
 export function workoutForDay(
   date: string,
   history: PlanHistory,
+  calendar: Calendar,
   session: Session | undefined,
   choice: string | undefined
 ): { plan?: Plan; day?: PlanDay } {
-  const plan = planFor(history, date)
-  const chosen = plan?.days.find((day) => day.id === choice)
-  if (chosen) return { plan, day: chosen }
+  const planned = calendar.planned(date)
+  const chosen = planned.plan?.days.find((day) => day.id === choice)
+  if (chosen) return { plan: planned.plan, day: chosen }
 
   if (session?.status === 'completed' && session.split_day_id) {
     const logged = history.days.get(session.split_day_id)
     if (logged) return logged
   }
 
-  return { plan, day: scheduledDay(plan, date) }
+  return planned
 }
 
 /** Total weight moved (weight × reps), in the user's unit. */

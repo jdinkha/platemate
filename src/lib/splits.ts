@@ -21,6 +21,8 @@ export type Split = {
   workouts: Workout[]
   /** Default week, Monday to Sunday: a workout key or REST for each day. */
   schedule: string[]
+  /** Default loop for loop mode: workout keys and REST, repeated in order. */
+  loop: string[]
 }
 
 export const REST = 'rest'
@@ -111,6 +113,7 @@ export const SPLITS: Split[] = [
       legs,
     ],
     schedule: ['push', 'pull', 'legs', 'push', 'pull', 'legs', REST],
+    loop: ['push', 'pull', 'legs', REST],
   },
   {
     id: 'upper-lower',
@@ -142,6 +145,7 @@ export const SPLITS: Split[] = [
       },
     ],
     schedule: ['upper', 'lower', REST, 'upper', 'lower', REST, REST],
+    loop: ['upper', REST, 'lower', REST],
   },
   {
     id: 'full-body',
@@ -172,6 +176,7 @@ export const SPLITS: Split[] = [
       },
     ],
     schedule: ['full-a', REST, 'full-b', REST, 'full-a', REST, REST],
+    loop: ['full-a', REST, 'full-b', REST],
   },
   {
     id: 'bro',
@@ -235,6 +240,7 @@ export const SPLITS: Split[] = [
       },
     ],
     schedule: ['chest', 'back', 'shoulders', 'legs', 'arms', REST, REST],
+    loop: ['chest', 'back', 'shoulders', 'legs', 'arms', REST],
   },
   {
     id: 'arnold',
@@ -266,6 +272,7 @@ export const SPLITS: Split[] = [
       legs,
     ],
     schedule: ['chest-back', 'shoulders-arms', 'legs', 'chest-back', 'shoulders-arms', 'legs', REST],
+    loop: ['chest-back', 'shoulders-arms', 'legs', REST],
   },
   {
     id: 'phul',
@@ -291,6 +298,7 @@ export const SPLITS: Split[] = [
       lowerHypertrophy,
     ],
     schedule: ['upper-power', 'lower-power', REST, 'upper-hypertrophy', 'lower-hypertrophy', REST, REST],
+    loop: ['upper-power', 'lower-power', REST, 'upper-hypertrophy', 'lower-hypertrophy', REST],
   },
   {
     id: 'phat',
@@ -328,6 +336,7 @@ export const SPLITS: Split[] = [
       },
     ],
     schedule: ['upper-power', 'lower-power', REST, 'back-shoulders', 'lower-hypertrophy', 'chest-arms', REST],
+    loop: ['upper-power', 'lower-power', REST, 'back-shoulders', 'lower-hypertrophy', 'chest-arms', REST],
   },
   {
     id: 'push-pull',
@@ -358,6 +367,7 @@ export const SPLITS: Split[] = [
       },
     ],
     schedule: ['push', 'pull', REST, 'push', 'pull', REST, REST],
+    loop: ['push', 'pull', REST],
   },
   {
     id: 'torso-limbs',
@@ -388,6 +398,7 @@ export const SPLITS: Split[] = [
       },
     ],
     schedule: ['torso', 'limbs', REST, 'torso', 'limbs', REST, REST],
+    loop: ['torso', 'limbs', REST],
   },
 ]
 
