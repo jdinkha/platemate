@@ -184,3 +184,75 @@ export function GoogleIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function DumbbellIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6.5 6.5 11 11M21 21l-1-1M3 3l1 1m14 18 4-4M2 6l4-4m-3 8 7-7m4 18 7-7" />
+    </Icon>
+  );
+}
+
+export function SlidersIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 4h-7m-4 0H3m18 8h-9m-4 0H3m18 8h-5m-4 0H3M14 2v4m-6 4v4m8 4v4" />
+    </Icon>
+  );
+}
+
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m15 18-6-6 6-6" />
+    </Icon>
+  );
+}
+
+export function ChevronRightIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m9 18 6-6-6-6" />
+    </Icon>
+  );
+}
+
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Icon>
+  );
+}
+
+export function PlusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12h14m-7-7v14" />
+    </Icon>
+  );
+}
+
+export function MinusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12h14" />
+    </Icon>
+  );
+}
+
+export function SkipIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 4l10 8-10 8V4zm14 1v14" />
+    </Icon>
+  );
+}
+
+export function UndoIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </Icon>
+  );
+}

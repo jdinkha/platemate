@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { CheckIcon, FlameIcon, TrendingUpIcon, XIcon } from "@/components/icons";
+import { ProgressRing } from "@/components/progress-ring";
 
 const exercises = [
   { name: "Bench Press", target: "4 × 8", weight: "185 lb", done: 4, sets: 4 },
@@ -150,33 +151,6 @@ function Readout({ label, value }: { label: string; value: string }) {
     <div className="flex-1 rounded-xl border border-border bg-background px-3 py-2">
       <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="font-mono text-sm font-semibold">{value}</p>
-    </div>
-  );
-}
-
-function ProgressRing({ done, total }: { done: number; total: number }) {
-  const radius = 23;
-  const circumference = 2 * Math.PI * radius;
-
-  return (
-    <div className="relative grid size-14 place-items-center">
-      <svg viewBox="0 0 56 56" className="absolute inset-0 -rotate-90">
-        <circle cx="28" cy="28" r={radius} fill="none" strokeWidth="5" className="stroke-muted" />
-        <circle
-          cx="28"
-          cy="28"
-          r={radius}
-          fill="none"
-          strokeWidth="5"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={circumference * (1 - done / total)}
-          className="stroke-accent-ink"
-        />
-      </svg>
-      <span className="font-mono text-[11px] font-semibold">
-        {done}/{total}
-      </span>
     </div>
   );
 }

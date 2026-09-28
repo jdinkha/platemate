@@ -1,15 +1,12 @@
 "use client";
 
 import { MoonIcon, SunIcon } from "@/components/icons";
+import { applyThemePreference } from "@/lib/theme";
 
 export function ThemeToggle() {
   function toggleTheme() {
-    const isDark = document.documentElement.classList.toggle("dark");
-    try {
-      localStorage.setItem("theme", isDark ? "dark" : "light");
-    } catch {
-      // Storage can be unavailable (e.g. private mode); the toggle still works for this visit.
-    }
+    const isDark = document.documentElement.classList.contains("dark");
+    applyThemePreference(isDark ? "light" : "dark");
   }
 
   // Both icons are rendered and CSS picks one, so the server and client markup
