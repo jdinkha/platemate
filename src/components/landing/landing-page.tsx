@@ -182,7 +182,7 @@ function Footer() {
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-5 py-10 text-sm text-muted-foreground sm:flex-row sm:px-8">
         <div className="flex items-center gap-2.5">
           <LogoMark className="size-6" />
-          <span>© {new Date().getFullYear()} PlateMate</span>
+          <span>© {new Date().getFullYear()} Jacob Dinkha</span>
         </div>
         <nav aria-label="Footer" className="flex gap-6">
           <Link href="/login" className="transition hover:text-foreground">
