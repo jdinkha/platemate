@@ -6,9 +6,10 @@ import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
 import { getPlanHistory, getProfile, getSessions } from '@/lib/data'
 import { isValidISODate, isValidTimeZone, todayIn } from '@/lib/dates'
-import { GOALS, REST, getSplit, targetFor, type Goal, type Split, type WeightUnit } from '@/lib/splits'
+import { findExercise } from '@/lib/exercises'
+import { GOALS, REST, getSplit, targetFor, targetForName, type Goal, type Split, type WeightUnit } from '@/lib/splits'
 import { createClient } from '@/lib/supabase/server'
-import { buildCalendar, planFor, sessionsNeededFrom, trackingStart, type Plan } from '@/lib/training'
+import { buildCalendar, planFor, retarget, sessionsNeededFrom, templateWorkout, trackingStart, type Plan } from '@/lib/training'
 import { toKg } from '@/lib/units'
 
 // Every action re-checks the session and validates its input: server actions
@@ -69,7 +70,7 @@ async function ensureExercises(supabase: Supabase, userId: string, names: string
     await supabase
       .from('exercises')
       .upsert(
-        unique.map((name) => ({ user_id: userId, name })),
+        unique.map((name) => ({ user_id: userId, name, muscle_group: findExercise(name)?.muscle ?? null })),
         { onConflict: 'user_id,name', ignoreDuplicates: true }
       )
   )
@@ -220,30 +221,6 @@ async function activateSplit(context: Pick<Context, 'supabase' | 'userId' | 'tod
     must(await supabase.from('splits').update({ active_from: null }).eq('id', current.id))
   }
   must(await supabase.from('profiles').update({ active_split_id: splitId }).eq('id', userId))
-}
-
-/** Target sets and reps for a split built from a template, for the given goal. */
-function targetRows(plan: Plan, goal: Goal) {
-  const template = getSplit(plan.templateKey)
-  if (!template) return []
-  return plan.days.flatMap((day) => {
-    const workout = template.workouts[day.position]
-    if (!workout || workout.name !== day.name) return []
-    return day.exercises.flatMap((exercise) => {
-      const match = workout.exercises.find((candidate) => candidate.name === exercise.name)
-      if (!match) return []
-      const target = targetFor(match, workout, goal)
-      return [
-        {
-          split_day_id: day.id,
-          exercise_id: exercise.exerciseId,
-          position: exercise.position,
-          target_sets: target.sets,
-          target_reps: target.reps,
-        },
-      ]
-    })
-  })
 }
 
 // ---------------------------------------------------------------------------
@@ -433,13 +410,97 @@ export async function updatePreferences(changes: {
 
   try {
     must(await context.supabase.from('profiles').update(update).eq('id', context.userId))
-    // A new goal changes the targets in the current split.
-    if (update.goal) {
-      const rows = targetRows(context.current, update.goal as Goal)
+    // A new goal changes the targets in the current split, keeping sets the user chose.
+    if (update.goal && update.goal !== context.profile.goal) {
+      const rows = retarget(context.current, context.profile.goal, update.goal as Goal)
       if (rows.length > 0) {
         must(await context.supabase.from('split_day_exercises').upsert(rows, { onConflict: 'split_day_id,exercise_id' }))
       }
     }
+  } catch {
+    return FAILED
+  }
+  return done()
+}
+
+// ---------------------------------------------------------------------------
+// Exercises in a workout. Only the split in effect today can be edited, and a
+// change applies to every day that workout comes up.
+// ---------------------------------------------------------------------------
+
+export async function updateTargetSets(dayId: string, exerciseId: string, sets: number): Promise<ActionResult> {
+  const context = await loadContext()
+  if (!context) return SIGNED_OUT
+  const day = context.current.days.find((candidate) => candidate.id === dayId)
+  if (!day?.exercises.some((exercise) => exercise.exerciseId === exerciseId)) return FAILED
+  if (!Number.isInteger(sets) || sets < 1 || sets > 10) return { error: 'Choose between 1 and 10 sets.' }
+
+  try {
+    must(
+      await context.supabase
+        .from('split_day_exercises')
+        .update({ target_sets: sets })
+        .eq('split_day_id', dayId)
+        .eq('exercise_id', exerciseId)
+    )
+  } catch {
+    return FAILED
+  }
+  return done()
+}
+
+export async function addExerciseToDay(dayId: string, name: string): Promise<ActionResult> {
+  const context = await loadContext()
+  if (!context) return SIGNED_OUT
+  const { current, supabase, userId, profile } = context
+  const day = current.days.find((candidate) => candidate.id === dayId)
+  if (!day) return FAILED
+
+  const typed = typeof name === 'string' ? name.trim().replace(/\s+/g, ' ') : ''
+  if (!typed || typed.length > 80) return { error: 'Exercise names can be up to 80 characters.' }
+  // Use the catalog's spelling when it's a known exercise ("dumbbell row" → "Dumbbell Row").
+  const exerciseName = findExercise(typed)?.name ?? typed
+  if (day.exercises.some((exercise) => exercise.name.toLowerCase() === exerciseName.toLowerCase())) {
+    return { error: `${exerciseName} is already in ${day.name}.` }
+  }
+
+  try {
+    const exerciseId = (await ensureExercises(supabase, userId, [exerciseName])).get(exerciseName)
+    if (!exerciseId) return FAILED
+    const target = targetForName(exerciseName, templateWorkout(current, day), profile.goal)
+    must(
+      await supabase.from('split_day_exercises').insert({
+        split_day_id: dayId,
+        exercise_id: exerciseId,
+        position: Math.max(-1, ...day.exercises.map((exercise) => exercise.position)) + 1,
+        target_sets: target.sets,
+        target_reps: target.reps,
+      })
+    )
+  } catch {
+    return FAILED
+  }
+  return done()
+}
+
+export async function removeExerciseFromDay(dayId: string, exerciseId: string): Promise<ActionResult> {
+  const context = await loadContext()
+  if (!context) return SIGNED_OUT
+  const day = context.current.days.find((candidate) => candidate.id === dayId)
+  const exercise = day?.exercises.find((candidate) => candidate.exerciseId === exerciseId)
+  if (!day || !exercise) return FAILED
+  if (day.exercises.length <= 1) {
+    return { error: `You can't delete ${exercise.name}. ${day.name} needs at least one exercise.` }
+  }
+
+  try {
+    must(
+      await context.supabase
+        .from('split_day_exercises')
+        .delete()
+        .eq('split_day_id', dayId)
+        .eq('exercise_id', exerciseId)
+    )
   } catch {
     return FAILED
   }

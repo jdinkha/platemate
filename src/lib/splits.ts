@@ -1,3 +1,5 @@
+import { findExercise } from '@/lib/exercises'
+
 // These match the goal_enum and unit_enum types in the database.
 export type Goal = 'strength' | 'mass' | 'weight_loss'
 export type WeightUnit = 'kg' | 'lbs'
@@ -429,4 +431,14 @@ const TARGETS: Record<Goal, Record<ExerciseKind, { sets: number; reps: number }>
 /** Sets and reps to aim for, based on the workout's focus or the user's goal. */
 export function targetFor(exercise: ExerciseTemplate, workout: Workout, goal: Goal) {
   return TARGETS[workout.focus ?? goal][exercise.kind]
+}
+
+/**
+ * Targets for any exercise by name: its kind in the built-in workout if it's
+ * listed there, else the catalog's, else treated as an accessory.
+ */
+export function targetForName(name: string, workout: Workout | undefined, goal: Goal) {
+  const listed = workout?.exercises.find((exercise) => exercise.name === name)
+  const kind = listed?.kind ?? (findExercise(name)?.compound ? 'compound' : 'accessory')
+  return TARGETS[workout?.focus ?? goal][kind]
 }

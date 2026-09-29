@@ -1,5 +1,5 @@
 import { addDays, dayOfWeek } from '@/lib/dates'
-import type { Goal, WeightUnit } from '@/lib/splits'
+import { getSplit, targetForName, type Goal, type WeightUnit } from '@/lib/splits'
 import { totalFromKg } from '@/lib/units'
 
 export type Profile = {
@@ -222,6 +222,34 @@ export function workoutForDay(
   }
 
   return planned
+}
+
+/** The built-in workout a split day was created from, if any. */
+export function templateWorkout(plan: Plan, day: PlanDay) {
+  const workout = getSplit(plan.templateKey)?.workouts[day.position]
+  return workout?.name === day.name ? workout : undefined
+}
+
+/**
+ * New targets for every exercise in a split after a change of goal. Reps
+ * follow the goal; sets do too, unless the user set their own.
+ */
+export function retarget(plan: Plan, from: Goal, to: Goal) {
+  return plan.days.flatMap((day) => {
+    const workout = templateWorkout(plan, day)
+    return day.exercises.map((exercise) => {
+      const before = targetForName(exercise.name, workout, from)
+      const after = targetForName(exercise.name, workout, to)
+      const custom = exercise.targetSets !== null && exercise.targetSets !== before.sets
+      return {
+        split_day_id: day.id,
+        exercise_id: exercise.exerciseId,
+        position: exercise.position,
+        target_sets: custom ? exercise.targetSets : after.sets,
+        target_reps: after.reps,
+      }
+    })
+  })
 }
 
 /** Total weight moved (weight × reps), in the user's unit. */

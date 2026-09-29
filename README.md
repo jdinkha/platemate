@@ -28,7 +28,8 @@ PlateMate is a workout tracker for lifters. Pick a proven training split, log ev
 
 - Opens to today's workout, with the week around it at a glance.
 - Each exercise shows its target and what you lifted last time, with weight and reps prefilled from your last set.
-- Log sets with large, tap-friendly controls. Delete a set, add an exercise that isn't in the plan, or swap to a different workout.
+- Log sets with large, tap-friendly controls. Delete a set, or swap to a different workout.
+- **Make each workout yours.** Change how many sets an exercise needs, add exercises by searching a list of over 100 common lifts (or type your own), and delete the ones you don't do. Changes apply to every day that workout comes up.
 - On a rest day, train anyway if you feel like it.
 - Not training today? **Take a break** (it doesn't count as missed) or **Skip** the workout.
 

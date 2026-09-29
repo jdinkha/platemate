@@ -11,6 +11,7 @@ import { getLastSessions, getSessions, getSets } from "@/lib/data";
 import { addDays, eachDay, formatDate, startOfWeek } from "@/lib/dates";
 import {
   buildCalendar,
+  planFor,
   sessionsNeededFrom,
   volumeOf,
   workoutForDay,
@@ -138,12 +139,13 @@ export async function DayView({ userId, profile, history, date, today, choice, e
     ...day.exercises.map((exercise) => ({
       exerciseId: exercise.exerciseId,
       name: exercise.name,
+      planned: true,
       target:
         exercise.targetSets && exercise.targetReps
           ? { sets: exercise.targetSets, reps: exercise.targetReps }
           : undefined,
     })),
-    ...added.map(([exerciseId, name]) => ({ exerciseId, name })),
+    ...added.map(([exerciseId, name]) => ({ exerciseId, name, planned: false })),
   ].map((exercise) => {
     const last = lastSessions.get(exercise.exerciseId);
     return {
@@ -162,7 +164,7 @@ export async function DayView({ userId, profile, history, date, today, choice, e
   const volume = volumeOf(sets, unit);
   const details = [
     workoutPlan.name,
-    `${day.exercises.length} exercises`,
+    `${day.exercises.length} ${day.exercises.length === 1 ? "exercise" : "exercises"}`,
     volume > 0 ? `${formatNumber(volume)} ${unit} moved` : undefined,
   ].filter(Boolean);
 
@@ -182,7 +184,16 @@ export async function DayView({ userId, profile, history, date, today, choice, e
         {options.length > 1 ? <WorkoutSwitcher workouts={options} current={day.id} /> : <span />}
         {sets.length === 0 && <MarkDayButtons date={date} />}
       </div>
-      <WorkoutLog key={day.id} date={date} dayId={day.id} unit={unit} exercises={exercises} />
+      <WorkoutLog
+        key={day.id}
+        date={date}
+        dayId={day.id}
+        dayName={day.name}
+        unit={unit}
+        // Only the split in effect today can be changed; older splits stay as they were.
+        editable={Boolean(planFor(history, today)?.days.some((option) => option.id === day.id))}
+        exercises={exercises}
+      />
     </DayLayout>
   );
 }
