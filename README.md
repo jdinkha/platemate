@@ -1,7 +1,5 @@
 # PlateMate
 
-**Stack plates. Stack progress.**
-
 PlateMate is a workout tracker for lifters. Pick a proven training split, log every set in seconds, and keep a training diary that shows your progress and the days you missed.
 
 ## Features
@@ -9,7 +7,7 @@ PlateMate is a workout tracker for lifters. Pick a proven training split, log ev
 ### Plan your training
 
 - **Nine built-in splits:** Push / Pull / Legs, Upper / Lower, Full Body, Bro Split, Arnold Split, PHUL, PHAT, Push / Pull, and Torso / Limbs. Each comes with its workouts, exercises and a default schedule.
-- **A goal that sets your targets.** Every exercise gets a target number of sets and reps based on your goal:
+- **A goal that sets your targets.** Every exercise gets a default target number of sets and reps based on your goal:
 
   | Goal        | Compound lifts | Accessories |
   | ----------- | -------------- | ----------- |
@@ -45,7 +43,6 @@ PlateMate is a workout tracker for lifters. Pick a proven training split, log ev
 - Training split, schedule (weekly or loop), and goal.
 - Units: pounds or kilograms. Everything you've logged is shown in the unit you choose.
 - First day of the week, time zone (detected when you sign up), and light, dark or system appearance.
-- Name, password, and sign out.
 
 ### Accounts
 
