@@ -113,9 +113,9 @@ supabase/migrations/      database schema, security policies and changes
 ## Roadmap
 
 - A demo mode to try PlateMate without an account
-- Workout reminders
 - An AI training assistant
 - A progress chart
+- Add check to see if every muscle group is covered by split
 
 ## License
 
