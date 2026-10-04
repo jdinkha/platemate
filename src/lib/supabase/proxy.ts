@@ -42,10 +42,11 @@ export async function updateSession(request: NextRequest) {
 
   const user = data?.claims
 
-  // The landing page and auth pages are public; everything else requires a session.
+  // The landing page, demo and auth pages are public; everything else requires a session.
   const { pathname } = request.nextUrl
   const isPublic =
     pathname === '/' ||
+    pathname === '/demo' ||
     pathname === '/login' ||
     pathname === '/signup' ||
     pathname === '/forgot-password' ||

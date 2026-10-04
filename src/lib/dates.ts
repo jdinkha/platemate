@@ -38,6 +38,11 @@ export function todayIn(timeZone: string) {
   }).format(new Date())
 }
 
+/** The usual first day of the week in a time zone: Sunday (0) in the Americas, Monday (1) almost everywhere else. */
+export function defaultWeekStart(timeZone: string) {
+  return timeZone.startsWith('America/') ? 0 : 1
+}
+
 /** The current hour (0–23) in the given time zone. */
 export function hourIn(timeZone: string) {
   return Number(

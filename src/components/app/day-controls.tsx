@@ -6,7 +6,16 @@ import { useState, useTransition } from "react";
 import { setDayStatus } from "@/app/(app)/actions";
 import { ChevronDownIcon, MoonIcon, SkipIcon, SpinnerIcon, UndoIcon } from "@/components/icons";
 
-export function WorkoutSwitcher({ workouts, current }: { workouts: { id: string; name: string }[]; current: string }) {
+/** Picks the day's workout: with `?workout=` in the URL, or through `onChange` if given. */
+export function WorkoutSwitcher({
+  workouts,
+  current,
+  onChange,
+}: {
+  workouts: { id: string; name: string }[];
+  current: string;
+  onChange?: (workoutId: string) => void;
+}) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -15,7 +24,11 @@ export function WorkoutSwitcher({ workouts, current }: { workouts: { id: string;
       <span className="sr-only">Workout</span>
       <select
         value={current}
-        onChange={(event) => router.push(`${pathname}?workout=${encodeURIComponent(event.target.value)}`)}
+        onChange={(event) =>
+          onChange
+            ? onChange(event.target.value)
+            : router.push(`${pathname}?workout=${encodeURIComponent(event.target.value)}`)
+        }
         className="h-10 appearance-none rounded-full border border-border bg-card pl-4 pr-10 text-sm font-medium outline-none transition hover:bg-muted focus-visible:ring-4 focus-visible:ring-accent/30"
       >
         {workouts.map((workout) => (

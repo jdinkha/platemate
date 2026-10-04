@@ -31,6 +31,12 @@ PlateMate is a workout tracker for lifters. Pick a proven training split, log ev
 - On a rest day, train anyway if you feel like it.
 - Not training today? **Take a break** (it doesn't count as missed) or **Skip** the workout.
 
+### Demo
+
+- Try PlateMate without an account: the landing page links to a demo of the Today page on Push / Pull / Legs, in pounds.
+- Log sets, change target sets, add and delete exercises, and switch between Push, Pull and Legs, just as when signed in. There's no diary or settings, and no breaks or skips.
+- The demo is saved in a cookie in your browser, so a reload keeps today's workout. The cookie expires at your midnight and the demo starts fresh, with no history. Nothing is sent to the database.
+
 ### Diary
 
 - A monthly calendar colored by what happened each day.
@@ -48,7 +54,7 @@ PlateMate is a workout tracker for lifters. Pick a proven training split, log ev
 
 - Sign up and sign in with Google, or with email and password.
 - Email confirmation and a forgot-password flow.
-- The landing page is public; everything else needs an account.
+- The landing page and the demo are public; everything else needs an account.
 
 ## How it works
 
@@ -86,7 +92,7 @@ A few ideas shape the design:
 
 - **Row level security on every table:** users can only read and change their own rows. Policies also stop anyone attaching their sets or sessions to another user's workouts or exercises. Signed-out visitors have no access to any table.
 - **Server actions re-check the session** and validate every input, since they can be called directly.
-- **Route protection:** `src/proxy.ts` refreshes the session on each request and sends signed-out visitors to the sign-in page for anything beyond the landing and account pages.
+- **Route protection:** `src/proxy.ts` refreshes the session on each request and sends signed-out visitors to the sign-in page for anything beyond the landing, demo and account pages.
 
 ## Project structure
 
@@ -94,16 +100,19 @@ A few ideas shape the design:
 src/
   app/
     page.tsx              landing page, onboarding, or today's workout
+    demo/                 the demo for signed-out visitors
     (app)/                diary and settings pages, and the server actions for training data
     (auth)/               sign in, sign up and password reset pages
     auth/                 OAuth callback, email link confirmation, and auth server actions
   components/
     app/                  signed-in UI: day view, set logging, diary, settings, schedule editor
+    demo/                 the demo's today page, saved in a cookie
     landing/              the marketing page
   lib/
     splits.ts             built-in splits, goals and rep targets
     training.ts           schedules, loops and day statuses
     data.ts               database queries
+    demo.ts               the demo's workouts and sets, and its cookie format
     dates.ts, units.ts    calendar dates and kg / lbs conversion
     supabase/             Supabase clients and session refresh
   proxy.ts                session refresh and route protection
@@ -112,7 +121,6 @@ supabase/migrations/      database schema, security policies and changes
 
 ## Roadmap
 
-- A demo mode to try PlateMate without an account
 - An AI training assistant
 - A progress chart
 - Add check to see if every muscle group is covered by split

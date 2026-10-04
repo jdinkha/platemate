@@ -10,20 +10,29 @@ export function SiteHeader() {
         <Logo />
         <div className="flex items-center gap-2 sm:gap-3">
           <ThemeToggle />
-          <Link
-            href="/login"
-            className="hidden h-10 items-center rounded-full px-4 text-sm font-medium transition hover:bg-muted sm:inline-flex"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/signup"
-            className="inline-flex h-10 items-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:opacity-90"
-          >
-            Get started
-          </Link>
+          <GuestLinks />
         </div>
       </div>
     </header>
+  );
+}
+
+/** "Sign in" and "Get started", for signed-out visitors. "Sign in" is hidden on small screens. */
+export function GuestLinks() {
+  return (
+    <>
+      <Link
+        href="/login"
+        className="hidden h-10 items-center rounded-full px-4 text-sm font-medium transition hover:bg-muted sm:inline-flex"
+      >
+        Sign in
+      </Link>
+      <Link
+        href="/signup"
+        className="inline-flex h-10 items-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:opacity-90"
+      >
+        Get started
+      </Link>
+    </>
   );
 }

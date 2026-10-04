@@ -72,8 +72,15 @@ function Hero() {
               <ArrowRightIcon className="size-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
             <Link
-              href="/login"
+              href="/demo"
               className="inline-flex h-13 w-full items-center justify-center rounded-full border border-border bg-card/60 px-7 font-semibold backdrop-blur transition hover:bg-muted sm:w-auto"
+            >
+              Try the demo
+            </Link>
+            {/* Larger screens have "Sign in" in the header. */}
+            <Link
+              href="/login"
+              className="inline-flex h-13 w-full items-center justify-center rounded-full border border-border bg-card/60 px-7 font-semibold backdrop-blur transition hover:bg-muted sm:hidden"
             >
               I have an account
             </Link>
@@ -185,6 +192,9 @@ function Footer() {
           <span>© {new Date().getFullYear()} Jacob Dinkha</span>
         </div>
         <nav aria-label="Footer" className="flex gap-6">
+          <Link href="/demo" className="transition hover:text-foreground">
+            Try the demo
+          </Link>
           <Link href="/login" className="transition hover:text-foreground">
             Sign in
           </Link>

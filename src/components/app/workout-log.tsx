@@ -28,6 +28,17 @@ export type ExerciseEntry = {
   lastTime?: { date: string; sets: Omit<LoggedSet, "id">[] };
 };
 
+/** How the log saves changes: the server actions, or stand-ins such as the demo's. */
+export type WorkoutActions = {
+  logSet: typeof logSet;
+  deleteSet: typeof deleteSet;
+  updateTargetSets: typeof updateTargetSets;
+  addExerciseToDay: typeof addExerciseToDay;
+  removeExerciseFromDay: typeof removeExerciseFromDay;
+};
+
+const serverActions: WorkoutActions = { logSet, deleteSet, updateTargetSets, addExerciseToDay, removeExerciseFromDay };
+
 type LogProps = {
   date: string;
   dayId: string;
@@ -36,13 +47,18 @@ type LogProps = {
   unit: WeightUnit;
   /** Whether the workout belongs to the current split, so its exercises can be changed. */
   editable: boolean;
+  actions: WorkoutActions;
 };
 
 // Sets shown before the server confirms them get placeholder ids.
 let placeholderCount = 0;
 const isPlaceholder = (id: string) => id.startsWith("placeholder-");
 
-export function WorkoutLog({ exercises, ...props }: LogProps & { exercises: ExerciseEntry[] }) {
+export function WorkoutLog({
+  exercises,
+  actions = serverActions,
+  ...props
+}: Omit<LogProps, "actions"> & { exercises: ExerciseEntry[]; actions?: WorkoutActions }) {
   const plannedCount = exercises.filter((exercise) => exercise.planned).length;
 
   return (
@@ -53,6 +69,7 @@ export function WorkoutLog({ exercises, ...props }: LogProps & { exercises: Exer
           exercise={exercise}
           number={index + 1}
           isLastPlanned={exercise.planned && plannedCount === 1}
+          actions={actions}
           {...props}
         />
       ))}
@@ -61,6 +78,7 @@ export function WorkoutLog({ exercises, ...props }: LogProps & { exercises: Exer
           dayId={props.dayId}
           dayName={props.dayName}
           existing={exercises.filter((exercise) => exercise.planned).map((exercise) => exercise.name)}
+          addExercise={actions.addExerciseToDay}
         />
       )}
     </div>
@@ -76,6 +94,7 @@ function ExerciseCard({
   dayName,
   unit,
   editable,
+  actions,
 }: LogProps & { exercise: ExerciseEntry; number: number; isLastPlanned: boolean }) {
   const [sets, changeSets] = useOptimistic(
     exercise.sets,
@@ -111,7 +130,7 @@ function ExerciseCard({
     setError(undefined);
     startTransition(async () => {
       changeSets({ add: { id: `placeholder-${++placeholderCount}`, weight: weightValue, reps: repsValue } });
-      const result = await logSet({
+      const result = await actions.logSet({
         date,
         dayId,
         exercise: { id: exercise.exerciseId, name: exercise.name },
@@ -126,7 +145,7 @@ function ExerciseCard({
     setError(undefined);
     startTransition(async () => {
       changeSets({ remove: id });
-      const result = await deleteSet(id);
+      const result = await actions.deleteSet(id);
       if (result.error) setError(result.error);
     });
   }
@@ -135,7 +154,7 @@ function ExerciseCard({
     setError(undefined);
     startTransition(async () => {
       showTargetSets(next);
-      const result = await updateTargetSets(dayId, exercise.exerciseId, next);
+      const result = await actions.updateTargetSets(dayId, exercise.exerciseId, next);
       if (result.error) setError(result.error);
     });
   }
@@ -143,7 +162,7 @@ function ExerciseCard({
   function removeExercise() {
     setError(undefined);
     startRemoving(async () => {
-      const result = await removeExerciseFromDay(dayId, exercise.exerciseId);
+      const result = await actions.removeExerciseFromDay(dayId, exercise.exerciseId);
       if (result.error) setError(result.error);
     });
   }
@@ -488,7 +507,17 @@ function Stepper({
  * Adds an exercise to the workout (and so to every day it comes up), with
  * suggestions from the exercise catalog as you type.
  */
-function AddExercise({ dayId, dayName, existing }: { dayId: string; dayName: string; existing: string[] }) {
+function AddExercise({
+  dayId,
+  dayName,
+  existing,
+  addExercise,
+}: {
+  dayId: string;
+  dayName: string;
+  existing: string[];
+  addExercise: WorkoutActions["addExerciseToDay"];
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [listOpen, setListOpen] = useState(false);
@@ -524,7 +553,7 @@ function AddExercise({ dayId, dayName, existing }: { dayId: string; dayName: str
     setError(undefined);
     setListOpen(false);
     startTransition(async () => {
-      const result = await addExerciseToDay(dayId, name);
+      const result = await addExercise(dayId, name);
       if (result.error) setError(result.error);
       else close();
     });

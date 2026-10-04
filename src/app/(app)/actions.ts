@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 
 import { getCurrentUser } from '@/lib/auth'
 import { getPlanHistory, getProfile, getSessions } from '@/lib/data'
-import { isValidISODate, isValidTimeZone, todayIn } from '@/lib/dates'
+import { defaultWeekStart, isValidISODate, isValidTimeZone, todayIn } from '@/lib/dates'
 import { findExercise } from '@/lib/exercises'
 import { GOALS, REST, getSplit, targetFor, targetForName, type Goal, type Split, type WeightUnit } from '@/lib/splits'
 import { createClient } from '@/lib/supabase/server'
@@ -253,8 +253,7 @@ export async function completeOnboarding(_prev: ActionResult, formData: FormData
           goal,
           unit_preference: unit,
           timezone,
-          // Weeks start on Sunday in the Americas and Monday almost everywhere else.
-          week_starts_on: timezone.startsWith('America/') ? 0 : 1,
+          week_starts_on: defaultWeekStart(timezone),
         },
         { onConflict: 'id' }
       )
