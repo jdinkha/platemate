@@ -177,3 +177,38 @@ export async function getLastSessions(userId: string, exerciseIds: string[], bef
   }
   return last
 }
+
+type LoggedSetRow = {
+  weight_kg: number | string
+  reps: number
+  exercises: { name: string } | null
+  workout_sessions: { date: string }
+}
+
+/** Every set logged in completed sessions from `from` to `to`, with its date. */
+export async function getLoggedSets(userId: string, from: string, to: string) {
+  const supabase = await createClient()
+  // PostgREST returns at most 1,000 rows per request, so page through them.
+  const page = 1000
+  const rows: LoggedSetRow[] = []
+  for (let offset = 0; ; offset += page) {
+    const { data, error } = await supabase
+      .from('set_logs')
+      .select('weight_kg, reps, exercises (name), workout_sessions!inner (date)')
+      .eq('workout_sessions.user_id', userId)
+      .eq('workout_sessions.status', 'completed')
+      .gte('workout_sessions.date', from)
+      .lte('workout_sessions.date', to)
+      .order('id')
+      .range(offset, offset + page - 1)
+    check(error)
+    rows.push(...((data ?? []) as unknown as LoggedSetRow[]))
+    if ((data?.length ?? 0) < page) break
+  }
+  return rows.map((row) => ({
+    date: row.workout_sessions.date,
+    exercise: row.exercises?.name ?? 'Exercise',
+    weight_kg: Number(row.weight_kg),
+    reps: row.reps,
+  }))
+}

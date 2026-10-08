@@ -19,7 +19,7 @@ export function AppShell({
   return (
     <div className="flex flex-1 flex-col">
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between gap-3 px-4 sm:px-6">
+        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between gap-2 px-4 sm:gap-3 sm:px-6">
           <Link
             href="/"
             aria-label="PlateMate home"

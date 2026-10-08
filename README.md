@@ -44,6 +44,14 @@ PlateMate is a workout tracker for lifters. Pick a proven training split, log ev
 - A list of every tracked day: trained, rest, break, skipped or missed.
 - Open any past day to see its sets, or to log a workout you forgot to record.
 
+### Insights
+
+- **Weekly sets by muscle**, planned against done, over the last four weeks. Every exercise in the catalog has a weight for each muscle it works (bench press: chest 1, front delts ½, triceps ½), so a set counts toward each of them. Exercises you type in yourself aren't counted, and the page lists them.
+- **Skipped work.** A muscle whose share of planned sets done is well below everything else's is flagged, with the exercise you miss most. So is doing less than 80% of your plan overall.
+- **Balance**, in your plan and in what you logged: back vs chest, legs vs upper body, hamstrings vs quads, rear vs front delts, and triceps vs biceps, each against a healthy range. Major muscles with fewer than 4 planned sets a week are flagged too.
+- **Lifts.** Your best estimated one-rep max (Epley; best reps for bodyweight lifts) in the last four weeks, against the eight weeks before and the same four weeks last year. A lift weaker than a year ago, or a compound lift with no new best, is flagged, and it matters most if your goal is strength.
+- Everything is worked out the same way every time, from your plan and your sets; the thresholds are constants in `src/lib/analysis.ts`. Run `node src/lib/analysis.check.mjs` to check the analysis.
+
 ### Settings
 
 - Training split, schedule (weekly or loop), and goal.
@@ -101,7 +109,7 @@ src/
   app/
     page.tsx              landing page, onboarding, or today's workout
     demo/                 the demo for signed-out visitors
-    (app)/                diary and settings pages, and the server actions for training data
+    (app)/                diary, insights and settings pages, and the server actions for training data
     (auth)/               sign in, sign up and password reset pages
     auth/                 OAuth callback, email link confirmation, and auth server actions
   components/
@@ -111,6 +119,8 @@ src/
   lib/
     splits.ts             built-in splits, goals and rep targets
     training.ts           schedules, loops and day statuses
+    analysis.ts           insights: sets per muscle, balance, skipped work and stalled lifts
+    exercises.ts          the exercise catalog, with how much each exercise works each muscle
     data.ts               database queries
     demo.ts               the demo's workouts and sets, and its cookie format
     dates.ts, units.ts    calendar dates and kg / lbs conversion
@@ -123,7 +133,6 @@ supabase/migrations/      database schema, security policies and changes
 
 - An AI training assistant
 - A progress chart
-- Add check to see if every muscle group is covered by split
 
 ## License
 
