@@ -94,4 +94,37 @@ const history = buildPlanHistory([ppl])
   assert.equal(stalled.issues.find((issue) => issue.title === 'Bench Press has stalled').severity, 'medium')
 }
 
+// Loops: weekly sets follow how often each workout comes up. Upper is 2 of 6 days in
+// U R U R L R and 1 of 4 in U R L R; Lower is 1 of 6 and 1 of 4.
+{
+  const loopPlan = (keys) => {
+    const plan = planFromTemplate('upper-lower', 'mass')
+    return { ...plan, scheduleType: 'loop', loop: keys.map((key) => plan.days.find((day) => day.id === key) ?? null) }
+  }
+  const run = (keys) => analyze(buildPlanHistory([loopPlan(keys)]), [], today, 'mass', 'kg')
+  const muscle = (result, name) => result.muscles.find((row) => row.muscle === name)
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≈ ${b}`)
+  const sixDay = run(['upper', 'rest', 'upper', 'rest', 'lower', 'rest'])
+  const fourDay = run(['upper', 'rest', 'lower', 'rest'])
+  close(muscle(sixDay, 'chest').planned / muscle(fourDay, 'chest').planned, 4 / 3)
+  close(muscle(fourDay, 'glutes').planned / muscle(sixDay, 'glutes').planned, 3 / 2)
+
+  // Each muscle lists the exercises behind it, adding up to its total.
+  const glutes = muscle(sixDay, 'glutes')
+  assert.deepEqual(glutes.exercises.map((row) => row.exercise), ['Back Squat', 'Romanian Deadlift', 'Walking Lunge'])
+  close(glutes.exercises.reduce((total, row) => total + row.planned, 0), glutes.planned)
+  assert.deepEqual(muscle(sixDay, 'chest').exercises.map((row) => [row.exercise, row.weight]), [['Bench Press', 1]])
+}
+
+// Switching split today: planned shows the new split right away, while the past
+// month is still judged by PPL, which was followed, so nothing counts as skipped.
+{
+  const upperLower = { ...planFromTemplate('upper-lower', 'mass'), activeFrom: today, createdAt: today }
+  const result = analyze(buildPlanHistory([ppl, upperLower]), follow(ppl, addDays(today, -40), addDays(today, -1)), today, 'mass', 'kg')
+  // Bench 4 sets, twice a week.
+  assert.equal(result.muscles.find((row) => row.muscle === 'chest').planned, 8)
+  assert.equal(Math.round(result.completion * 100), 100)
+  assert.ok(!result.issues.some((issue) => issue.title.includes('skipping') || issue.title.includes('planned sets')))
+}
+
 console.log('analysis checks passed')

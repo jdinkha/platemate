@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
 
 import { Stat } from "@/components/app/diary-parts";
-import { AlertIcon, CheckIcon } from "@/components/icons";
-import { analysisRanges, analyze, type Analysis, type Issue, type LiftTrend } from "@/lib/analysis";
+import { AlertIcon, CheckIcon, ChevronRightIcon } from "@/components/icons";
+import {
+  analysisRanges,
+  analyze,
+  type Analysis,
+  type Issue,
+  type LiftTrend,
+  type MuscleExercise,
+} from "@/lib/analysis";
 import { requireTrainingSetup } from "@/lib/auth";
 import { getLoggedSets } from "@/lib/data";
 import { formatDate } from "@/lib/dates";
@@ -59,8 +66,7 @@ export default async function InsightsPage() {
 }
 
 function Report({ analysis, unit }: { analysis: Analysis; unit: WeightUnit }) {
-  const { issues, lifts } = analysis;
-  const completion = analysis.plannedSets > 0 ? analysis.actualSets / analysis.plannedSets : undefined;
+  const { issues, lifts, completion } = analysis;
   const improving = lifts.filter((lift) => lift.status === "progressing").length;
   const judged = lifts.filter((lift) => lift.status !== "new").length;
 
@@ -102,8 +108,8 @@ function Report({ analysis, unit }: { analysis: Analysis; unit: WeightUnit }) {
           value={completion !== undefined ? `${Math.round(completion * 100)}%` : "–"}
           tone={completion !== undefined && completion < 0.8 ? "danger" : undefined}
         />
-        <Stat label="Sets a week" value={formatNumber(Math.round(analysis.actualSets))} />
-        <Stat label="Planned a week" value={formatNumber(Math.round(analysis.plannedSets))} />
+        <Stat label="Avg. done a week" value={formatNumber(Math.round(analysis.actualSets))} />
+        <Stat label="Current plan a week" value={formatNumber(Math.round(analysis.plannedSets))} />
         <Stat label="Lifts improving" value={judged > 0 ? `${improving} of ${judged}` : "–"} />
       </dl>
 
@@ -118,6 +124,7 @@ function Report({ analysis, unit }: { analysis: Analysis; unit: WeightUnit }) {
 function MuscleChart({ analysis }: { analysis: Analysis }) {
   const scale = Math.max(1, ...analysis.muscles.flatMap((row) => [row.planned, row.actual]));
   const position = (value: number) => `${(value / scale) * 100}%`;
+  const period = analysis.days === 28 ? "the past 4 weeks" : `the past ${analysis.days} days`;
 
   return (
     <section aria-labelledby="muscles-heading" className="rounded-3xl border border-border bg-card p-5 sm:p-7">
@@ -128,59 +135,55 @@ function MuscleChart({ analysis }: { analysis: Analysis }) {
         <div className="flex gap-4 text-xs text-muted-foreground" aria-hidden="true">
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-4 rounded-r-[4px] bg-accent-ink" />
-            Done
+            Done (weekly average)
           </span>
           <span className="flex items-center gap-1.5">
             <span className="h-3.5 w-0.5 bg-foreground" />
-            Planned
+            Planned (current plan)
           </span>
         </div>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        A set counts toward every muscle it works: one set of bench press is 1 chest, ½ front delts and ½ triceps.
-        {analysis.days < 28 && ` Based on ${analysis.days} days, so expect these to move.`}
+        Done is your average sets a week over {period} ({formatDate(analysis.from, { month: "short", day: "numeric" })} –{" "}
+        {formatDate(analysis.to, { month: "short", day: "numeric" })}). Planned is a week of your current plan, even if you
+        changed it today. A set counts toward every muscle it works: one set of bench press is 1 chest, ½ front delts and ½
+        triceps. Tap a muscle to see the exercises behind it.
       </p>
 
-      <table className="mt-5 w-full text-sm">
-        <thead className="sr-only">
-          <tr>
-            <th>Muscle</th>
-            <th>Chart</th>
-            <th>Done / planned sets a week</th>
-          </tr>
-        </thead>
-        <tbody>
-          {analysis.muscles.map((row) => (
-            <tr
-              key={row.muscle}
-              title={`${MUSCLES[row.muscle]}: ${formatNumber(row.actual)} sets a week done, ${formatNumber(row.planned)} planned`}
-            >
-              <th scope="row" className="w-24 py-1.5 pr-3 text-left font-medium sm:w-28">
-                <span className="flex items-center gap-1">
+      <ul className="mt-5 text-sm">
+        {analysis.muscles.map((row) => (
+          <li key={row.muscle}>
+            <details className="group">
+              <summary
+                title={`${MUSCLES[row.muscle]}: ${formatNumber(row.actual)} sets a week on average over ${period}, ${formatNumber(row.planned)} a week in your current plan`}
+                className="grid cursor-pointer list-none grid-cols-[7rem_1fr_6rem] items-center rounded-lg py-1.5 hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-accent sm:grid-cols-[8rem_1fr_6rem] [&::-webkit-details-marker]:hidden"
+              >
+                <span className="flex items-center gap-1 pr-3 font-medium">
+                  <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
                   {MUSCLES[row.muscle]}
                   {row.skipped && <AlertIcon className="size-3.5 shrink-0 text-danger" aria-label="Being skipped" />}
                 </span>
-              </th>
-              <td className="py-1.5" aria-hidden="true">
-                <div className="relative h-4">
-                  <div className="absolute inset-y-0 left-0 right-0 my-auto h-2.5 bg-muted" />
-                  <div
+                <span className="relative h-4" aria-hidden="true">
+                  <span className="absolute inset-y-0 left-0 right-0 my-auto h-2.5 bg-muted" />
+                  <span
                     className={`absolute inset-y-0 left-0 my-auto h-2.5 rounded-r-[4px] ${row.skipped ? "bg-danger" : "bg-accent-ink"}`}
                     style={{ width: position(row.actual) }}
                   />
                   {row.planned > 0 && (
-                    <div className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground" style={{ left: position(row.planned) }} />
+                    <span className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground" style={{ left: position(row.planned) }} />
                   )}
-                </div>
-              </td>
-              <td className="w-24 whitespace-nowrap py-1.5 pl-3 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                <span className="font-semibold text-foreground">{formatNumber(row.actual)}</span> /{" "}
-                {formatNumber(row.planned)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                </span>
+                <span className="whitespace-nowrap pl-3 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                  <span className="font-semibold text-foreground">{formatNumber(row.actual)}</span> /{" "}
+                  {formatNumber(row.planned)}
+                  <span className="sr-only"> sets a week, average done / current plan</span>
+                </span>
+              </summary>
+              <MuscleExercises exercises={row.exercises} />
+            </details>
+          </li>
+        ))}
+      </ul>
 
       {analysis.unmapped.length > 0 && (
         <p className="mt-4 text-xs text-muted-foreground">
@@ -188,6 +191,47 @@ function MuscleChart({ analysis }: { analysis: Analysis }) {
         </p>
       )}
     </section>
+  );
+}
+
+const FRACTIONS: Record<number, string> = { 0.25: "¼", 0.5: "½", 0.75: "¾" };
+
+/** What adds up to one muscle's weekly sets. */
+function MuscleExercises({ exercises }: { exercises: MuscleExercise[] }) {
+  return (
+    <div className="mb-2 ml-5 mt-1 rounded-2xl bg-muted/50 px-4 py-3">
+      {exercises.length === 0 ? (
+        <p className="text-muted-foreground">Nothing in your plan or your log works this muscle.</p>
+      ) : (
+        <table className="w-full">
+          <thead>
+            <tr className="text-left text-xs text-muted-foreground">
+              <th className="pb-1 font-medium">Exercise</th>
+              <th className="pb-1 text-right font-medium">Sets a week, avg. done / current plan</th>
+            </tr>
+          </thead>
+          <tbody>
+            {exercises.map((entry) => (
+              <tr key={entry.exercise}>
+                <th scope="row" className="py-1 pr-3 text-left font-normal">
+                  {entry.exercise}
+                  {entry.weight < 1 && (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      · each set counts {FRACTIONS[entry.weight] ?? formatNumber(entry.weight)}
+                    </span>
+                  )}
+                </th>
+                <td className="whitespace-nowrap py-1 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                  <span className="font-semibold text-foreground">{formatNumber(entry.actual)}</span> /{" "}
+                  {formatNumber(entry.planned)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 

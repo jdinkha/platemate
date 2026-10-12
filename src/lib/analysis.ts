@@ -84,15 +84,23 @@ export type LiftTrend = {
   status: 'regressed' | 'stalled' | 'progressing' | 'new'
 }
 
+/** One exercise's part of a muscle's weekly sets: its sets × `weight`, how much it works the muscle. */
+export type MuscleExercise = { exercise: string; weight: number; planned: number; actual: number }
+
 export type Analysis = {
   from: string
   to: string
   days: number
-  /** Weekly sets per muscle: each set counts by how much the exercise works the muscle. */
-  muscles: { muscle: Muscle; planned: number; actual: number; skipped: boolean }[]
-  /** Weekly sets, each counted once. */
+  /**
+   * Weekly sets per muscle: `planned` in the current split, `actual` done on average
+   * a week from `from` to `to`. Each set counts by how much the exercise works the muscle.
+   */
+  muscles: { muscle: Muscle; planned: number; actual: number; skipped: boolean; exercises: MuscleExercise[] }[]
+  /** Weekly sets, each counted once: in the current split, and done on average. */
   plannedSets: number
   actualSets: number
+  /** Share of the sets planned from `from` to `to` that were done; undefined if none were planned. */
+  completion?: number
   ratios: { label: string; planned?: number; actual?: number; min: number; max: number }[]
   /** Logged or planned exercises with no muscle data (typed in by the user). */
   unmapped: string[]
@@ -132,39 +140,45 @@ export function analyze(
   const dates = eachDay(from, to)
   const weeks = dates.length / 7
 
-  // Weekly sets of each exercise: planned follows whichever split was active each day.
-  const planned = new Map<string, number>()
+  // Weekly sets of each exercise: in the current split, as of today; on average over
+  // the window, following whichever split was active each day; and done on average.
+  const planned = weeklySets(planFor(history, today)!)
+  const expected = new Map<string, number>()
   for (const [plan, active] of Map.groupBy(dates, (date) => planFor(history, date))) {
     if (!plan) continue
-    for (const [name, count] of weeklySets(plan)) add(planned, name, (count * active.length) / dates.length)
+    for (const [name, count] of weeklySets(plan)) add(expected, name, (count * active.length) / dates.length)
   }
   const actual = new Map<string, number>()
   for (const set of sets) if (set.date >= from && set.date <= to) add(actual, set.exercise, 1 / weeks)
 
-  const plannedVolume = byMuscle(planned)
-  const actualVolume = byMuscle(actual)
+  const exercises = byMuscle(planned, actual)
+  const plannedVolume = volume(exercises, 'planned')
+  const actualVolume = volume(exercises, 'actual')
+  const expectedVolume = volume(byMuscle(expected, actual), 'planned')
   const plannedSets = sum([...planned.values()])
+  const expectedSets = sum([...expected.values()])
   const actualSets = sum([...actual.values()])
   const enoughData = dates.length >= MIN_DAYS
   const issues: Issue[] = []
   const skipped = new Set<Muscle>()
 
-  // Following the plan, overall and per muscle.
-  const completion = plannedSets > 0 ? actualSets / plannedSets : 1
+  // Following the plan, overall and per muscle. Each day is judged by the split
+  // active that day, so a split picked today doesn't mark last month as skipped.
+  const completion = expectedSets > 0 ? actualSets / expectedSets : 1
   if (enoughData && completion < MIN_COMPLETION) {
     issues.push({
       severity: completion < 0.5 ? 'high' : 'medium',
       title: `You're doing ${percent(completion)} of your planned sets`,
-      detail: `${formatNumber(round(actualSets))} sets a week against ${formatNumber(round(plannedSets))} planned. Missed workouts and unfinished exercises both count.`,
+      detail: `${formatNumber(round(actualSets))} sets a week against ${formatNumber(round(expectedSets))} planned. Missed workouts and unfinished exercises both count.`,
     })
   }
   for (const muscle of MAJOR) {
-    const target = plannedVolume[muscle]
+    const target = expectedVolume[muscle]
     if (!enoughData || target < MIN_WEEKLY_SETS / 2) continue
     const done = actualVolume[muscle] / target
     if (done > Math.min(completion, 1) - SKIP_GAP) continue
     skipped.add(muscle)
-    const culprit = mostSkipped(muscle, planned, actual)
+    const culprit = mostSkipped(muscle, expected, actual)
     const name = MUSCLES[muscle].toLowerCase()
     issues.push({
       severity: done < completion / 2 ? 'high' : 'medium',
@@ -241,9 +255,11 @@ export function analyze(
       planned: plannedVolume[muscle],
       actual: actualVolume[muscle],
       skipped: skipped.has(muscle),
+      exercises: exercises[muscle],
     })),
     plannedSets,
     actualSets,
+    completion: expectedSets > 0 ? completion : undefined,
     ratios,
     unmapped,
     lifts,
@@ -264,14 +280,24 @@ function weeklySets(plan: Plan) {
   return weekly
 }
 
-function byMuscle(sets: Map<string, number>) {
-  const volume = Object.fromEntries(MUSCLE_KEYS.map((muscle) => [muscle, 0])) as Volume
-  for (const [name, count] of sets) {
-    for (const [muscle, weight] of Object.entries(findExercise(name)?.muscles ?? {})) {
-      volume[muscle as Muscle] += weight * count
+/** The exercises working each muscle, most planned sets first. */
+function byMuscle(planned: Map<string, number>, actual: Map<string, number>) {
+  const muscles = Object.fromEntries(MUSCLE_KEYS.map((muscle) => [muscle, [] as MuscleExercise[]])) as Record<Muscle, MuscleExercise[]>
+  for (const exercise of new Set([...planned.keys(), ...actual.keys()])) {
+    const sets = { planned: planned.get(exercise) ?? 0, actual: actual.get(exercise) ?? 0 }
+    if (sets.planned === 0 && sets.actual === 0) continue
+    for (const [muscle, weight] of Object.entries(findExercise(exercise)?.muscles ?? {})) {
+      muscles[muscle as Muscle].push({ exercise, weight, planned: weight * sets.planned, actual: weight * sets.actual })
     }
   }
-  return volume
+  for (const list of Object.values(muscles)) {
+    list.sort((a, b) => b.planned - a.planned || b.actual - a.actual || a.exercise.localeCompare(b.exercise))
+  }
+  return muscles
+}
+
+function volume(muscles: Record<Muscle, MuscleExercise[]>, key: 'planned' | 'actual') {
+  return Object.fromEntries(MUSCLE_KEYS.map((muscle) => [muscle, sum(muscles[muscle].map((row) => row[key]))])) as Volume
 }
 
 /** The planned exercise working `muscle` (as a prime mover or strong synergist) with the smallest share done. */
