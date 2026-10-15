@@ -7,7 +7,7 @@ registerHooks({
     next(specifier.startsWith('@/') ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 })
 
-const { analyze } = await import('./analysis.ts')
+const { analyze, weightTrend } = await import('./analysis.ts')
 const { addDays, dayOfWeek, eachDay } = await import('./dates.ts')
 const { SPLITS, targetForName } = await import('./splits.ts')
 const { buildPlanHistory } = await import('./training.ts')
@@ -125,6 +125,41 @@ const history = buildPlanHistory([ppl])
   assert.equal(result.muscles.find((row) => row.muscle === 'chest').planned, 8)
   assert.equal(Math.round(result.completion * 100), 100)
   assert.ok(!result.issues.some((issue) => issue.title.includes('skipping') || issue.title.includes('planned sets')))
+}
+
+// Body weight: a month of weigh-ins judged against the goal, each end the
+// average of two back-to-back mornings.
+{
+  /** Each argument is a week's [first morning, second morning] in kg, oldest first, the last week ending today. */
+  const weeks = (...pairs) =>
+    pairs.flatMap(([first, second], i) => {
+      const date = addDays(today, (i - pairs.length + 1) * 7)
+      return [{ date: addDays(date, -1), weight_kg: first }, { date, weight_kg: second }]
+    })
+  // Same weight after a month of trying to build muscle: not eating enough.
+  const flat = weightTrend(weeks([79.8, 80.2], [80, 80.4], [80, 79.8], [80.2, 80], [80.4, 79.8]), today, 'mass', 'kg')
+  assert.equal(flat.monthAgo.date, addDays(today, -28))
+  assert.equal(flat.issue.title, "Your weight isn't going up")
+  assert.equal(flat.issue.severity, 'medium')
+  assert.match(flat.issue.detail, /from 80 kg on Sep 10 to 80\.1 kg 4 weeks later/)
+  // One heavy morning a month ago and one light one today don't hide a 1.25% gain.
+  const noisy = weightTrend(weeks([79.2, 80.8], [80.3, 80.5], [80.5, 80.7], [80.8, 80.8], [81.6, 80.4]), today, 'mass', 'kg')
+  assert.equal(noisy.issue, undefined)
+  // Lighter: worse.
+  const losing = weeks([80, 80], [79.8, 79.8], [79.5, 79.5], [79.2, 79.2], [79, 79])
+  assert.equal(weightTrend(losing, today, 'mass', 'kg').issue.severity, 'high')
+  // Weight loss: judged the other way.
+  assert.equal(weightTrend(weeks([80, 80], [80, 80], [80, 80], [80, 80], [80, 80]), today, 'weight_loss', 'kg').issue.title, "Your weight isn't going down")
+  assert.equal(weightTrend(losing, today, 'weight_loss', 'kg').issue, undefined)
+  // Strength: no judgment.
+  assert.equal(weightTrend(losing, today, 'strength', 'kg').issue, undefined)
+  // Lone weigh-ins, a week apart, are never judged.
+  assert.equal(weightTrend([28, 21, 14, 7, 0].map((days) => ({ date: addDays(today, -days), weight_kg: 80 })), today, 'mass', 'kg'), undefined)
+  // Two weeks apart is too soon to tell; a month old is too stale to judge.
+  assert.equal(weightTrend(weeks([80, 80], [80, 80], [80, 80]), today, 'mass', 'kg').monthAgo, undefined)
+  const stale = losing.map((entry) => ({ ...entry, date: addDays(entry.date, -21) }))
+  assert.equal(weightTrend(stale, today, 'mass', 'kg').issue, undefined)
+  assert.equal(weightTrend([], today, 'mass', 'kg'), undefined)
 }
 
 console.log('analysis checks passed')

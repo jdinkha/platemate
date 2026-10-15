@@ -1,5 +1,8 @@
 import type { PostgrestError } from '@supabase/supabase-js'
+import { cookies } from 'next/headers'
 import { cache } from 'react'
+
+import { addDays } from '@/lib/dates'
 
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -9,6 +12,7 @@ import {
   type Profile,
   type Session,
   type SetLog,
+  type WeighIn,
 } from '@/lib/training'
 
 // Row level security limits every query to the signed-in user's rows; the
@@ -19,7 +23,7 @@ function check(error: PostgrestError | null) {
   // 42703: undefined column, 42P01: undefined table, PGRST204/205: not in the schema cache.
   if (['42703', '42P01', 'PGRST204', 'PGRST205'].includes(error.code)) {
     throw new Error(
-      `The database schema is out of date (${error.message}). Apply supabase/migrations/20260928193613_workout_tracking.sql with \`npx supabase db push\`.`
+      `The database schema is out of date (${error.message}). Apply the migrations in supabase/migrations with \`npx supabase db push\`.`
     )
   }
   throw new Error(error.message)
@@ -211,4 +215,34 @@ export async function getLoggedSets(userId: string, from: string, to: string) {
     weight_kg: Number(row.weight_kg),
     reps: row.reps,
   }))
+}
+
+/** The user's weigh-ins from `from` on, oldest first. */
+export async function getWeighIns(userId: string, from: string) {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('body_weights')
+    .select('date, weight_kg')
+    .eq('user_id', userId)
+    .gte('date', from)
+    .order('date')
+  check(error)
+  return (data ?? []).map((row) => ({ date: row.date as string, weight_kg: Number(row.weight_kg) })) as WeighIn[]
+}
+
+/** Set when the user waves away the weekly weigh-in prompt; it holds the prompt off on this device for a week. */
+export const SKIP_WEIGH_IN_COOKIE = 'skip-weigh-in'
+
+/**
+ * Which weigh-in to ask for today: the week's first morning when nothing was logged
+ * in the past week, or its second when only yesterday was logged (Insights averages
+ * the two). Undefined when there's nothing to ask, or the prompt was waved away.
+ */
+export async function weighInDue(userId: string, today: string) {
+  if ((await cookies()).has(SKIP_WEIGH_IN_COOKIE)) return undefined
+  const logged = new Set((await getWeighIns(userId, addDays(today, -6))).map((weighIn) => weighIn.date))
+  const yesterday = addDays(today, -1)
+  if (logged.size === 0) return 'first'
+  if (logged.has(yesterday) && !logged.has(today) && !logged.has(addDays(yesterday, -1))) return 'second'
+  return undefined
 }

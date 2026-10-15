@@ -1,10 +1,11 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { getCurrentUser } from '@/lib/auth'
-import { getPlanHistory, getProfile, getSessions } from '@/lib/data'
+import { SKIP_WEIGH_IN_COOKIE, getPlanHistory, getProfile, getSessions } from '@/lib/data'
 import { defaultWeekStart, isValidISODate, isValidTimeZone, todayIn } from '@/lib/dates'
 import { findExercise } from '@/lib/exercises'
 import { GOALS, REST, getSplit, targetFor, targetForName, type Goal, type Split, type WeightUnit } from '@/lib/splits'
@@ -662,5 +663,36 @@ export async function setDayStatus(date: string, status: 'break' | 'skipped' | n
   } catch {
     return FAILED
   }
+  return done()
+}
+
+// ---------------------------------------------------------------------------
+// Body weight
+// ---------------------------------------------------------------------------
+
+/** Records today's body weight, replacing any weigh-in already logged today. */
+export async function logWeight(weight: number): Promise<ActionResult> {
+  const context = await loadContext()
+  if (!context) return SIGNED_OUT
+  const unit = context.profile.unit_preference
+  const value = Number(weight)
+  const weightKg = toKg(value, unit)
+  if (!Number.isFinite(value) || weightKg < 20 || weightKg > 400) return { error: `Enter your body weight in ${unit}.` }
+
+  try {
+    must(
+      await context.supabase
+        .from('body_weights')
+        .upsert({ user_id: context.userId, date: context.today, weight_kg: weightKg }, { onConflict: 'user_id,date' })
+    )
+  } catch {
+    return FAILED
+  }
+  return done()
+}
+
+/** Hides the weekly weigh-in prompt for a week. */
+export async function skipWeighIn(): Promise<ActionResult> {
+  (await cookies()).set(SKIP_WEIGH_IN_COOKIE, '1', { maxAge: 60 * 60 * 24 * 7, httpOnly: true, sameSite: 'lax' })
   return done()
 }

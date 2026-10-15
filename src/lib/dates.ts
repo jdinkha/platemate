@@ -56,6 +56,11 @@ export function addDays(iso: string, days: number) {
   return toISODate(date)
 }
 
+/** Days from `from` to `to`; negative if `to` is earlier. */
+export function daysBetween(from: string, to: string) {
+  return (parseISODate(to).getTime() - parseISODate(from).getTime()) / 86_400_000
+}
+
 /** 0 = Sunday … 6 = Saturday, matching split_day_schedule.weekday. */
 export function dayOfWeek(iso: string) {
   return parseISODate(iso).getUTCDay()

@@ -71,6 +71,9 @@ export type SetLog = {
   reps: number
 }
 
+/** A row in body_weights. */
+export type WeighIn = { date: string; weight_kg: number }
+
 /**
  * trained   – sets were logged
  * break     – the user chose to take the day off (doesn't count as missed)

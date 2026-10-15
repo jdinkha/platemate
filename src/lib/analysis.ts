@@ -1,7 +1,7 @@
-import { addDays, eachDay, formatDate } from '@/lib/dates'
+import { addDays, daysBetween, eachDay, formatDate } from '@/lib/dates'
 import { findExercise, MUSCLES, type Muscle } from '@/lib/exercises'
 import type { Goal, WeightUnit } from '@/lib/splits'
-import { planFor, trackingStart, type Plan, type PlanHistory } from '@/lib/training'
+import { planFor, trackingStart, type Plan, type PlanHistory, type WeighIn } from '@/lib/training'
 import { formatNumber, fromKg } from '@/lib/units'
 
 // A deterministic look at the user's training: weekly sets per muscle in the
@@ -20,6 +20,12 @@ const MIN_COMPLETION = 0.8
 const SKIP_GAP = 0.2
 /** How much weaker than last year counts as a regression (best e1RM varies set to set). */
 const REGRESSION = 0.02
+/** Body weight is compared over about a month: against a pair of weigh-ins 3 to 6 weeks earlier, the closest to 4. */
+const WEIGHT_GAP = { min: 21, ideal: 28, max: 42 }
+/** A monthly change smaller than this share of body weight (under 1 lb at 180 lb) is holding steady. */
+const STEADY_WEIGHT = 0.005
+/** Body weight is only judged while the latest weigh-in is this many days old or newer. */
+const RECENT_WEIGH_IN = 14
 
 /** Muscles that need direct work; the rest get enough from compound lifts. */
 const MAJOR: Muscle[] = ['chest', 'back', 'sideDelts', 'rearDelts', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves']
@@ -263,8 +269,67 @@ export function analyze(
     ratios,
     unmapped,
     lifts,
-    issues: issues.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'high' ? -1 : 1)),
+    issues: issues.sort(bySeverity),
   }
+}
+
+/** Most severe first. */
+export function bySeverity(a: Issue, b: Issue) {
+  return a.severity === b.severity ? 0 : a.severity === 'high' ? -1 : 1
+}
+
+export type WeightTrend = {
+  /** The latest pair of back-to-back weigh-ins, averaged and dated by the second day. */
+  latest: WeighIn
+  /** The pair about a month before `latest`, if there is one. */
+  monthAgo?: WeighIn
+  /** Set when the weight is moving the wrong way for the user's goal. */
+  issue?: Issue
+}
+
+/**
+ * The latest weight against the weight about a month before. Building muscle
+ * needs the scale to go up and losing weight needs it to go down; holding steady
+ * or moving the other way means eating too little or too much.
+ * One morning can be off by a pound or two, so each weight is the average of
+ * weigh-ins on back-to-back days; lone weigh-ins aren't judged.
+ * `weighIns` must be oldest first.
+ */
+export function weightTrend(weighIns: WeighIn[], today: string, goal: Goal, unit: WeightUnit): WeightTrend | undefined {
+  const pairs = weighIns.flatMap((weighIn, i) => {
+    const before = weighIns[i - 1]
+    return before?.date === addDays(weighIn.date, -1)
+      ? [{ date: weighIn.date, weight_kg: (before.weight_kg + weighIn.weight_kg) / 2 }]
+      : []
+  })
+  const latest = pairs.at(-1)
+  if (!latest) return undefined
+  const gap = (pair: WeighIn) => daysBetween(pair.date, latest.date)
+  const monthAgo = pairs
+    .filter((pair) => gap(pair) >= WEIGHT_GAP.min && gap(pair) <= WEIGHT_GAP.max)
+    .sort((a, b) => Math.abs(gap(a) - WEIGHT_GAP.ideal) - Math.abs(gap(b) - WEIGHT_GAP.ideal))[0]
+  if (!monthAgo || latest.date < addDays(today, -RECENT_WEIGH_IN)) return { latest, monthAgo }
+
+  const change = latest.weight_kg / monthAgo.weight_kg - 1
+  const show = (weighIn: WeighIn) => `${formatNumber(fromKg(weighIn.weight_kg, unit))} ${unit}`
+  const went = `Averaging two back-to-back mornings each time, you went from ${show(monthAgo)} on ${formatDate(monthAgo.date, { month: 'short', day: 'numeric' })} to ${show(latest)} ${Math.round(gap(monthAgo) / 7)} weeks later.`
+  let issue: Issue | undefined
+  if (goal === 'mass' && change < STEADY_WEIGHT) {
+    const losing = change <= -STEADY_WEIGHT
+    issue = {
+      severity: losing ? 'high' : 'medium',
+      title: losing ? "You're losing weight while building muscle" : "Your weight isn't going up",
+      detail: `${went} Muscle can't grow without spare calories, so you're not eating enough. Eat a few hundred calories more a day, and aim to gain about 0.25–0.5% of your body weight a week.`,
+    }
+  } else if (goal === 'weight_loss' && change > -STEADY_WEIGHT) {
+    const gaining = change >= STEADY_WEIGHT
+    issue = {
+      severity: gaining ? 'high' : 'medium',
+      title: gaining ? "You're gaining weight while trying to lose it" : "Your weight isn't going down",
+      detail: `${went} You're eating as much as you burn, or more. Eat a few hundred calories less a day, and aim to lose about 0.5–1% of your body weight a week.`,
+    }
+  }
+  return { latest, monthAgo, issue }
 }
 
 /** Sets per week of each exercise in a split, following its schedule. */

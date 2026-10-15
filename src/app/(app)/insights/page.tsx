@@ -1,20 +1,25 @@
 import type { Metadata } from "next";
 
 import { Stat } from "@/components/app/diary-parts";
+import { WeighInForm } from "@/components/app/weigh-in";
 import { AlertIcon, CheckIcon, ChevronRightIcon } from "@/components/icons";
 import {
   analysisRanges,
   analyze,
+  bySeverity,
+  weightTrend,
   type Analysis,
   type Issue,
   type LiftTrend,
   type MuscleExercise,
+  type WeightTrend,
 } from "@/lib/analysis";
 import { requireTrainingSetup } from "@/lib/auth";
-import { getLoggedSets } from "@/lib/data";
-import { formatDate } from "@/lib/dates";
+import { getLoggedSets, getWeighIns } from "@/lib/data";
+import { addDays, daysBetween, formatDate } from "@/lib/dates";
 import { MUSCLES } from "@/lib/exercises";
-import type { WeightUnit } from "@/lib/splits";
+import type { Goal, WeightUnit } from "@/lib/splits";
+import type { WeighIn } from "@/lib/training";
 import { formatNumber, fromKg } from "@/lib/units";
 
 export const metadata: Metadata = {
@@ -37,12 +42,20 @@ const LIFT_STYLES: Record<LiftTrend["status"], { label: string; badge: string }>
   new: { label: "New", badge: "bg-muted text-muted-foreground" },
 };
 
+/** How far back the body weight chart goes. */
+const WEIGHT_WEEKS = 12;
+
 export default async function InsightsPage() {
   const { user, profile, history, today } = await requireTrainingSetup();
-  const sets = (
-    await Promise.all(analysisRanges(today).map((range) => getLoggedSets(user.id, range.from, range.to)))
-  ).flat();
+  const [sets, weighIns] = await Promise.all([
+    Promise.all(analysisRanges(today).map((range) => getLoggedSets(user.id, range.from, range.to))).then((ranges) =>
+      ranges.flat()
+    ),
+    getWeighIns(user.id, addDays(today, -(WEIGHT_WEEKS * 7 - 1))),
+  ]);
   const analysis = analyze(history, sets, today, profile.goal, profile.unit_preference);
+  const trend = weightTrend(weighIns, today, profile.goal, profile.unit_preference);
+  if (analysis && trend?.issue) analysis.issues = [trend.issue, ...analysis.issues].sort(bySeverity);
 
   return (
     <div className="space-y-6">
@@ -61,6 +74,7 @@ export default async function InsightsPage() {
           Insights start tomorrow, once you have a day of training to look at.
         </p>
       )}
+      <BodyWeight weighIns={weighIns} trend={trend} goal={profile.goal} unit={profile.unit_preference} />
     </div>
   );
 }
@@ -329,5 +343,154 @@ function Lifts({ lifts, unit }: { lifts: LiftTrend[]; unit: WeightUnit }) {
         </ol>
       )}
     </section>
+  );
+}
+
+const WEIGHT_AIMS: Record<Goal, string> = {
+  mass: "To build muscle, your weight should climb slowly, about 0.25–0.5% a week. If it holds steady or drops over a month, you're not eating enough.",
+  weight_loss:
+    "To lose fat, your weight should drop steadily, about 0.5–1% a week. If it holds steady or climbs over a month, you're eating too much.",
+  strength: "For strength, holding steady or climbing slowly is fine.",
+};
+
+function BodyWeight({
+  weighIns,
+  trend,
+  goal,
+  unit,
+}: {
+  weighIns: WeighIn[];
+  trend?: WeightTrend;
+  goal: Goal;
+  unit: WeightUnit;
+}) {
+  const day = (iso: string) => formatDate(iso, { month: "short", day: "numeric" });
+  const change = (from: WeighIn, to: WeighIn) => {
+    const diff = Math.round((fromKg(to.weight_kg, unit) - fromKg(from.weight_kg, unit)) * 10) / 10;
+    return `${diff > 0 ? "+" : diff < 0 ? "−" : ""}${formatNumber(Math.abs(diff))} ${unit}`;
+  };
+  const latest = weighIns.at(-1);
+
+  return (
+    <section aria-labelledby="weight-heading" className="space-y-5 rounded-3xl border border-border bg-card p-5 sm:p-7">
+      <div>
+        <h2 id="weight-heading" className="text-lg font-semibold">
+          Body weight
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Your weigh-ins over the past {WEIGHT_WEEKS} weeks. {WEIGHT_AIMS[goal]} The 4-week change compares averages of two
+          back-to-back mornings, so one off day doesn&apos;t skew it.
+        </p>
+      </div>
+
+      {latest && (
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Stat label={`Latest, ${day(latest.date)}`} value={`${formatNumber(fromKg(latest.weight_kg, unit))} ${unit}`} />
+          <Stat
+            label="4-week change"
+            value={trend?.monthAgo ? change(trend.monthAgo, trend.latest) : "–"}
+            tone={trend?.issue ? "danger" : undefined}
+          />
+          {weighIns.length > 1 && <Stat label={`Since ${day(weighIns[0].date)}`} value={change(weighIns[0], latest)} />}
+        </dl>
+      )}
+
+      {weighIns.length > 1 ? (
+        <WeightChart weighIns={weighIns} unit={unit} />
+      ) : (
+        <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          Your trend shows up here after two weigh-ins.
+        </p>
+      )}
+
+      <WeighInForm unit={unit} />
+    </section>
+  );
+}
+
+/** Weigh-ins as a line over time, with a table of them for screen readers and exact values. */
+function WeightChart({ weighIns, unit }: { weighIns: WeighIn[]; unit: WeightUnit }) {
+  const values = weighIns.map((weighIn) => fromKg(weighIn.weight_kg, unit));
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  // Some room above and below, and a flat line still sits mid-chart.
+  const pad = Math.max((high - low) * 0.15, unit === "kg" ? 0.5 : 1);
+  const first = weighIns[0].date;
+  const span = daysBetween(first, weighIns.at(-1)!.date);
+  const x = (date: string) => (daysBetween(first, date) / span) * 100;
+  const y = (value: number) => ((high + pad - value) / (high - low + 2 * pad)) * 100;
+  const day = (iso: string) => formatDate(iso, { month: "short", day: "numeric" });
+
+  return (
+    <figure>
+      <div className="grid grid-cols-[3.5rem_1fr] gap-x-3" aria-hidden="true">
+        <div className="relative font-mono text-xs tabular-nums text-muted-foreground">
+          {[...new Set([high, low])].map((value) => (
+            <span key={value} className="absolute right-0 -translate-y-1/2" style={{ top: `${y(value)}%` }}>
+              {formatNumber(value)}
+            </span>
+          ))}
+        </div>
+        <div className="relative h-40 text-accent-ink">
+          {[...new Set([high, low])].map((value) => (
+            <span
+              key={value}
+              className="absolute inset-x-0 border-t border-dashed border-border"
+              style={{ top: `${y(value)}%` }}
+            />
+          ))}
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
+            <polyline
+              points={weighIns.map((weighIn, i) => `${x(weighIn.date)},${y(values[i])}`).join(" ")}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+          {weighIns.map((weighIn, i) => (
+            <span
+              key={weighIn.date}
+              title={`${day(weighIn.date)}: ${formatNumber(values[i])} ${unit}`}
+              className="absolute grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center"
+              style={{ left: `${x(weighIn.date)}%`, top: `${y(values[i])}%` }}
+            >
+              <span className="size-2.5 rounded-full bg-accent-ink ring-2 ring-card" />
+            </span>
+          ))}
+        </div>
+        <div />
+        <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+          <span>{day(first)}</span>
+          <span>{day(weighIns.at(-1)!.date)}</span>
+        </div>
+      </div>
+      <details className="mt-4 text-sm">
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+          All {weighIns.length} weigh-ins
+        </summary>
+        <table className="mt-2 w-full">
+          <thead className="sr-only">
+            <tr>
+              <th>Date</th>
+              <th>Weight</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {weighIns.map((weighIn, i) => ({ weighIn, value: values[i] })).reverse().map(({ weighIn, value }) => (
+              <tr key={weighIn.date}>
+                <th scope="row" className="py-1.5 text-left font-normal">
+                  {formatDate(weighIn.date, { weekday: "short", month: "short", day: "numeric" })}
+                </th>
+                <td className="py-1.5 text-right font-mono tabular-nums">
+                  {formatNumber(value)} {unit}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+    </figure>
   );
 }
