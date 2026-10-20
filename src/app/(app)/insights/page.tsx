@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
 
+import { CoachChat } from "@/components/app/coach-chat";
 import { Stat } from "@/components/app/diary-parts";
 import { WeighInForm } from "@/components/app/weigh-in";
 import { AlertIcon, CheckIcon, ChevronRightIcon } from "@/components/icons";
 import {
-  analysisRanges,
-  analyze,
-  bySeverity,
-  weightTrend,
   type Analysis,
   type Issue,
   type LiftTrend,
@@ -15,8 +12,8 @@ import {
   type WeightTrend,
 } from "@/lib/analysis";
 import { requireTrainingSetup } from "@/lib/auth";
-import { getLoggedSets, getWeighIns } from "@/lib/data";
-import { addDays, daysBetween, formatDate } from "@/lib/dates";
+import { getInsights, WEIGHT_WEEKS } from "@/lib/data";
+import { daysBetween, formatDate } from "@/lib/dates";
 import { MUSCLES } from "@/lib/exercises";
 import type { Goal, WeightUnit } from "@/lib/splits";
 import type { WeighIn } from "@/lib/training";
@@ -42,20 +39,10 @@ const LIFT_STYLES: Record<LiftTrend["status"], { label: string; badge: string }>
   new: { label: "New", badge: "bg-muted text-muted-foreground" },
 };
 
-/** How far back the body weight chart goes. */
-const WEIGHT_WEEKS = 12;
-
 export default async function InsightsPage() {
   const { user, profile, history, today } = await requireTrainingSetup();
-  const [sets, weighIns] = await Promise.all([
-    Promise.all(analysisRanges(today).map((range) => getLoggedSets(user.id, range.from, range.to))).then((ranges) =>
-      ranges.flat()
-    ),
-    getWeighIns(user.id, addDays(today, -(WEIGHT_WEEKS * 7 - 1))),
-  ]);
-  const analysis = analyze(history, sets, today, profile.goal, profile.unit_preference);
-  const trend = weightTrend(weighIns, today, profile.goal, profile.unit_preference);
-  if (analysis && trend?.issue) analysis.issues = [trend.issue, ...analysis.issues].sort(bySeverity);
+  const { weighIns, analysis, trend } = await getInsights(user.id, profile, history, today);
+  const stuck = analysis?.lifts.find((lift) => lift.status === "regressed" || lift.status === "stalled");
 
   return (
     <div className="space-y-6">
@@ -67,6 +54,13 @@ export default async function InsightsPage() {
             : "Your plan against what you logged."}
         </p>
       </div>
+      <CoachChat
+        suggestions={[
+          stuck ? `Why is my ${stuck.exercise.toLowerCase()} stuck?` : "Are my lifts still going up?",
+          "What should I change in my plan?",
+          "Is my body weight on track?",
+        ]}
+      />
       {analysis ? (
         <Report analysis={analysis} unit={profile.unit_preference} />
       ) : (

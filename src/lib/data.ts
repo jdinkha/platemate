@@ -2,6 +2,7 @@ import type { PostgrestError } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { cache } from 'react'
 
+import { analysisRanges, analyze, bySeverity, weightTrend } from '@/lib/analysis'
 import { addDays } from '@/lib/dates'
 
 import { createClient } from '@/lib/supabase/server'
@@ -9,6 +10,7 @@ import {
   buildPlanHistory,
   sortByPosition,
   type Plan,
+  type PlanHistory,
   type Profile,
   type Session,
   type SetLog,
@@ -245,4 +247,21 @@ export async function weighInDue(userId: string, today: string) {
   if (logged.size === 0) return 'first'
   if (logged.has(yesterday) && !logged.has(today) && !logged.has(addDays(yesterday, -1))) return 'second'
   return undefined
+}
+
+/** How far back Insights looks at body weight. */
+export const WEIGHT_WEEKS = 12
+
+/** What Insights is built from: the sets and weigh-ins it reads, and its analysis of them. */
+export async function getInsights(userId: string, profile: Profile, history: PlanHistory, today: string) {
+  const [sets, weighIns] = await Promise.all([
+    Promise.all(analysisRanges(today).map((range) => getLoggedSets(userId, range.from, range.to))).then((ranges) =>
+      ranges.flat()
+    ),
+    getWeighIns(userId, addDays(today, -(WEIGHT_WEEKS * 7 - 1))),
+  ])
+  const analysis = analyze(history, sets, today, profile.goal, profile.unit_preference)
+  const trend = weightTrend(weighIns, today, profile.goal, profile.unit_preference)
+  if (analysis && trend?.issue) analysis.issues = [trend.issue, ...analysis.issues].sort(bySeverity)
+  return { sets, weighIns, analysis, trend }
 }

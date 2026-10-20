@@ -387,8 +387,7 @@ function liftTrends(sets: LoggedSet[], to: string): LiftTrend[] {
   const trends: LiftTrend[] = []
   for (const [exercise, logged] of Map.groupBy(sets, (set) => set.exercise)) {
     const bodyweight = logged.every((set) => set.weight_kg === 0)
-    const score = (set: LoggedSet) =>
-      bodyweight ? set.reps : set.reps === 1 ? set.weight_kg : set.weight_kg * (1 + set.reps / 30)
+    const score = (set: LoggedSet) => (bodyweight ? set.reps : estimatedMax(set))
     const best = ([from, until]: string[]) => {
       const scores = logged.filter((set) => set.date >= from && set.date <= until).map(score)
       return scores.length > 0 && Math.max(...scores) > 0 ? Math.max(...scores) : undefined
@@ -408,6 +407,11 @@ function liftTrends(sets: LoggedSet[], to: string): LiftTrend[] {
     trends.push({ exercise, current, previous, lastYear, bodyweight, status })
   }
   return trends.sort((a, b) => order[a.status] - order[b.status] || a.exercise.localeCompare(b.exercise))
+}
+
+/** Epley's estimate of a set's one-rep max. */
+export function estimatedMax(set: LoggedSet) {
+  return set.reps === 1 ? set.weight_kg : set.weight_kg * (1 + set.reps / 30)
 }
 
 function add(map: Map<string, number>, key: string, amount: number) {
