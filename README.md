@@ -27,14 +27,14 @@ PlateMate is a workout tracker for lifters. Pick a proven training split, log ev
 - Opens to today's workout, with the week around it at a glance.
 - Each exercise shows its target and what you lifted last time, with weight and reps prefilled from your last set.
 - Log sets with large, tap-friendly controls. Delete a set, or swap to a different workout.
-- **Make each workout yours.** Change how many sets an exercise needs, add exercises by searching a list of over 100 common lifts (or type your own), and delete the ones you don't do. Changes apply to every day that workout comes up.
+- **Make each workout yours.** Change how many sets and reps an exercise needs, drag exercises into the order you do them (or move them with the arrow keys), add exercises by searching a list of over 100 common lifts (or type your own), and delete the ones you don't do. Changes apply to every day that workout comes up. Sets and reps you set yourself are kept when you change your goal.
 - On a rest day, train anyway if you feel like it.
 - Not training today? **Take a break** (it doesn't count as missed) or **Skip** the workout.
 
 ### Demo
 
 - Try PlateMate without an account: the landing page links to a demo of the Today page on Push / Pull / Legs, in pounds.
-- Log sets, change target sets, add and delete exercises, and switch between Push, Pull and Legs, just as when signed in. There's no diary or settings, and no breaks or skips.
+- Log sets, change target sets and reps, reorder, add and delete exercises, and switch between Push, Pull and Legs, just as when signed in. There's no diary or settings, and no breaks or skips.
 - The demo is saved in a cookie in your browser, so a reload keeps today's workout. The cookie expires at your midnight and the demo starts fresh, with no history. Nothing is sent to the database.
 
 ### Diary

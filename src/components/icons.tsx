@@ -265,6 +265,14 @@ export function ChevronUpIcon(props: IconProps) {
   );
 }
 
+export function GripIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01" strokeWidth={3} />
+    </Icon>
+  );
+}
+
 export function TrashIcon(props: IconProps) {
   return (
     <Icon {...props}>

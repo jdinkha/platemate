@@ -11,7 +11,7 @@ export const DEMO_COOKIE = 'platemate-demo'
 export const DEMO_SPLIT = getSplit('ppl')!
 const DEMO_GOAL: Goal = 'mass'
 
-export type DemoExercise = { name: string; sets: number }
+export type DemoExercise = { name: string; sets: number; reps: number }
 
 /** A logged set. Exercises are identified by name; weights are in pounds. */
 export type DemoSet = { id: number; exercise: string; weight: number; reps: number }
@@ -23,7 +23,7 @@ export type DemoState = {
   weekStartsOn: number
   /** The workout key picked for today. Until one is picked, the schedule decides. */
   workout?: string
-  /** Each workout's exercises and target sets, by workout key, as the visitor has changed them. */
+  /** Each workout's exercises and targets, in order, by workout key, as the visitor has changed them. */
   workouts: Record<string, DemoExercise[]>
   /** Today's sets in the order they were logged. */
   sets: DemoSet[]
@@ -37,10 +37,7 @@ export function newDemo(date: string, weekStartsOn: number): DemoState {
     workouts: Object.fromEntries(
       DEMO_SPLIT.workouts.map((workout) => [
         workout.key,
-        workout.exercises.map((exercise) => ({
-          name: exercise.name,
-          sets: targetFor(exercise, workout, DEMO_GOAL).sets,
-        })),
+        workout.exercises.map((exercise) => ({ name: exercise.name, ...targetFor(exercise, workout, DEMO_GOAL) })),
       ])
     ),
     sets: [],
@@ -52,11 +49,6 @@ export function scheduledWorkout(date: string) {
   // The split lists its week Monday first; dayOfWeek counts from Sunday.
   const key = DEMO_SPLIT.schedule[(dayOfWeek(date) + 6) % 7]
   return key === REST ? undefined : getWorkout(DEMO_SPLIT, key)
-}
-
-/** Reps to aim for. They follow the goal; only the number of sets can be changed. */
-export function targetReps(workoutKey: string, exercise: string) {
-  return targetForName(exercise, getWorkout(DEMO_SPLIT, workoutKey), DEMO_GOAL).reps
 }
 
 // ---------------------------------------------------------------------------
@@ -81,16 +73,37 @@ export function deleteDemoSet(state: DemoState, id: number): DemoState {
   return { ...state, sets: state.sets.filter((set) => set.id !== id) }
 }
 
-export function setDemoTargetSets(state: DemoState, workoutKey: string, exercise: string, sets: number): DemoState | string {
+export function setDemoTarget(
+  state: DemoState,
+  workoutKey: string,
+  exercise: string,
+  sets: number,
+  reps: number
+): DemoState | string {
   const exercises = state.workouts[workoutKey]
   if (!exercises?.some((candidate) => candidate.name === exercise)) return FAILED
   if (!Number.isInteger(sets) || sets < 1 || sets > 10) return 'Choose between 1 and 10 sets.'
+  if (!Number.isInteger(reps) || reps < 1 || reps > 50) return 'Choose between 1 and 50 reps.'
   return {
     ...state,
     workouts: {
       ...state.workouts,
-      [workoutKey]: exercises.map((candidate) => (candidate.name === exercise ? { ...candidate, sets } : candidate)),
+      [workoutKey]: exercises.map((candidate) => (candidate.name === exercise ? { ...candidate, sets, reps } : candidate)),
     },
+  }
+}
+
+export function reorderDemoExercises(state: DemoState, workoutKey: string, names: string[]): DemoState | string {
+  const exercises = state.workouts[workoutKey]
+  const valid =
+    exercises &&
+    Array.isArray(names) &&
+    names.length === exercises.length &&
+    exercises.every((exercise) => names.includes(exercise.name))
+  if (!valid) return FAILED
+  return {
+    ...state,
+    workouts: { ...state.workouts, [workoutKey]: names.map((name) => exercises.find((exercise) => exercise.name === name)!) },
   }
 }
 
@@ -107,8 +120,8 @@ export function addDemoExercise(state: DemoState, workoutKey: string, name: stri
     return `${exercise} is already in ${workout.name}.`
   }
 
-  const { sets } = targetForName(exercise, workout, DEMO_GOAL)
-  return { ...state, workouts: { ...state.workouts, [workoutKey]: [...exercises, { name: exercise, sets }] } }
+  const target = targetForName(exercise, workout, DEMO_GOAL)
+  return { ...state, workouts: { ...state.workouts, [workoutKey]: [...exercises, { name: exercise, ...target }] } }
 }
 
 export function removeDemoExercise(state: DemoState, workoutKey: string, exercise: string): DemoState | string {
@@ -124,7 +137,7 @@ export function removeDemoExercise(state: DemoState, workoutKey: string, exercis
 
 // ---------------------------------------------------------------------------
 // The cookie. A cookie holds about 4 KB, so the state is stored as compact JSON:
-//   { d: date, w: weekStartsOn, c: workout, x: { key: [[name, sets]] }, s: [[id, exercise, weight, reps]] }
+//   { d: date, w: weekStartsOn, c: workout, x: { key: [[name, sets, reps]] }, s: [[id, exercise, weight, reps]] }
 // ---------------------------------------------------------------------------
 
 export function encodeDemo(state: DemoState) {
@@ -133,7 +146,7 @@ export function encodeDemo(state: DemoState) {
     w: state.weekStartsOn,
     c: state.workout,
     x: Object.fromEntries(
-      Object.entries(state.workouts).map(([key, exercises]) => [key, exercises.map((exercise) => [exercise.name, exercise.sets])])
+      Object.entries(state.workouts).map(([key, exercises]) => [key, exercises.map((exercise) => [exercise.name, exercise.sets, exercise.reps])])
     ),
     s: state.sets.map((set) => [set.id, set.exercise, set.weight, set.reps]),
   })
@@ -161,9 +174,12 @@ export function decodeDemo(json: string | null | undefined): DemoState | null {
     const valid =
       Array.isArray(exercises) &&
       exercises.length > 0 &&
-      exercises.every((exercise) => Array.isArray(exercise) && isName(exercise[0]) && isInteger(exercise[1], 1, 10))
+      exercises.every(
+        (exercise) =>
+          Array.isArray(exercise) && isName(exercise[0]) && isInteger(exercise[1], 1, 10) && isInteger(exercise[2], 1, 50)
+      )
     if (!valid) return null
-    workouts[key] = exercises.map(([name, sets]) => ({ name, sets }))
+    workouts[key] = exercises.map(([name, sets, reps]) => ({ name, sets, reps }))
   }
 
   const sets: unknown = data.s

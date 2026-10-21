@@ -410,7 +410,7 @@ export async function updatePreferences(changes: {
 
   try {
     must(await context.supabase.from('profiles').update(update).eq('id', context.userId))
-    // A new goal changes the targets in the current split, keeping sets the user chose.
+    // A new goal changes the targets in the current split, keeping sets and reps the user chose.
     if (update.goal && update.goal !== context.profile.goal) {
       const rows = retarget(context.current, context.profile.goal, update.goal as Goal)
       if (rows.length > 0) {
@@ -428,20 +428,47 @@ export async function updatePreferences(changes: {
 // change applies to every day that workout comes up.
 // ---------------------------------------------------------------------------
 
-export async function updateTargetSets(dayId: string, exerciseId: string, sets: number): Promise<ActionResult> {
+export async function updateTarget(dayId: string, exerciseId: string, sets: number, reps: number): Promise<ActionResult> {
   const context = await loadContext()
   if (!context) return SIGNED_OUT
   const day = context.current.days.find((candidate) => candidate.id === dayId)
   if (!day?.exercises.some((exercise) => exercise.exerciseId === exerciseId)) return FAILED
   if (!Number.isInteger(sets) || sets < 1 || sets > 10) return { error: 'Choose between 1 and 10 sets.' }
+  if (!Number.isInteger(reps) || reps < 1 || reps > 50) return { error: 'Choose between 1 and 50 reps.' }
 
   try {
     must(
       await context.supabase
         .from('split_day_exercises')
-        .update({ target_sets: sets })
+        .update({ target_sets: sets, target_reps: reps })
         .eq('split_day_id', dayId)
         .eq('exercise_id', exerciseId)
+    )
+  } catch {
+    return FAILED
+  }
+  return done()
+}
+
+/** Puts a workout's exercises in the order given, which lists each of them once. */
+export async function reorderExercises(dayId: string, exerciseIds: string[]): Promise<ActionResult> {
+  const context = await loadContext()
+  if (!context) return SIGNED_OUT
+  const day = context.current.days.find((candidate) => candidate.id === dayId)
+  const valid =
+    day &&
+    Array.isArray(exerciseIds) &&
+    exerciseIds.length === day.exercises.length &&
+    day.exercises.every((exercise) => exerciseIds.includes(exercise.exerciseId))
+  if (!valid) return FAILED
+
+  try {
+    // Only `position` is sent, so the upsert leaves the targets as they are.
+    must(
+      await context.supabase.from('split_day_exercises').upsert(
+        exerciseIds.map((exerciseId, position) => ({ split_day_id: dayId, exercise_id: exerciseId, position })),
+        { onConflict: 'split_day_id,exercise_id' }
+      )
     )
   } catch {
     return FAILED

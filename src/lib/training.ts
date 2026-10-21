@@ -234,8 +234,8 @@ export function templateWorkout(plan: Plan, day: PlanDay) {
 }
 
 /**
- * New targets for every exercise in a split after a change of goal. Reps
- * follow the goal; sets do too, unless the user set their own.
+ * New targets for every exercise in a split after a change of goal. Sets and
+ * reps follow the goal, unless the user set their own.
  */
 export function retarget(plan: Plan, from: Goal, to: Goal) {
   return plan.days.flatMap((day) => {
@@ -243,13 +243,14 @@ export function retarget(plan: Plan, from: Goal, to: Goal) {
     return day.exercises.map((exercise) => {
       const before = targetForName(exercise.name, workout, from)
       const after = targetForName(exercise.name, workout, to)
-      const custom = exercise.targetSets !== null && exercise.targetSets !== before.sets
+      const customSets = exercise.targetSets !== null && exercise.targetSets !== before.sets
+      const customReps = exercise.targetReps !== null && exercise.targetReps !== before.reps
       return {
         split_day_id: day.id,
         exercise_id: exercise.exerciseId,
         position: exercise.position,
-        target_sets: custom ? exercise.targetSets : after.sets,
-        target_reps: after.reps,
+        target_sets: customSets ? exercise.targetSets : after.sets,
+        target_reps: customReps ? exercise.targetReps : after.reps,
       }
     })
   })

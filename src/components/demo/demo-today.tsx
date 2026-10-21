@@ -20,9 +20,9 @@ import {
   logDemoSet,
   newDemo,
   removeDemoExercise,
+  reorderDemoExercises,
   scheduledWorkout,
-  setDemoTargetSets,
-  targetReps,
+  setDemoTarget,
   type DemoState,
 } from "@/lib/demo";
 import { getWorkout } from "@/lib/splits";
@@ -111,7 +111,8 @@ function DemoDay({ today, saved }: { today: string; saved: DemoState | null }) {
   const actions: WorkoutActions = {
     logSet: async ({ exercise, weight, reps }) => save(logDemoSet(latest.current, exercise.name, weight, reps)),
     deleteSet: async (id) => save(deleteDemoSet(latest.current, Number(id))),
-    updateTargetSets: async (workout, exercise, sets) => save(setDemoTargetSets(latest.current, workout, exercise, sets)),
+    updateTarget: async (workout, exercise, sets, reps) => save(setDemoTarget(latest.current, workout, exercise, sets, reps)),
+    reorderExercises: async (workout, names) => save(reorderDemoExercises(latest.current, workout, names)),
     addExerciseToDay: async (workout, name) => save(addDemoExercise(latest.current, workout, name)),
     removeExerciseFromDay: async (workout, exercise) => save(removeDemoExercise(latest.current, workout, exercise)),
   };
@@ -174,7 +175,7 @@ function DemoDay({ today, saved }: { today: string; saved: DemoState | null }) {
       exerciseId: exercise.name,
       name: exercise.name,
       planned: true,
-      target: { sets: exercise.sets, reps: targetReps(workout.key, exercise.name) },
+      target: { sets: exercise.sets, reps: exercise.reps },
     })),
     ...added.map((name) => ({ exerciseId: name, name, planned: false })),
   ].map((exercise) => ({

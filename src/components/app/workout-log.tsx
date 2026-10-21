@@ -1,15 +1,36 @@
 "use client";
 
-import { useEffect, useId, useOptimistic, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+  type FormEvent,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 
 import {
   addExerciseToDay,
   deleteSet,
   logSet,
   removeExerciseFromDay,
-  updateTargetSets,
+  reorderExercises,
+  updateTarget,
 } from "@/app/(app)/actions";
-import { CheckIcon, MinusIcon, PlusIcon, SpinnerIcon, TrashIcon, XIcon } from "@/components/icons";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  GripIcon,
+  MinusIcon,
+  PlusIcon,
+  SpinnerIcon,
+  TrashIcon,
+  XIcon,
+} from "@/components/icons";
 import { formatDate } from "@/lib/dates";
 import { searchExercises } from "@/lib/exercises";
 import type { WeightUnit } from "@/lib/splits";
@@ -32,12 +53,20 @@ export type ExerciseEntry = {
 export type WorkoutActions = {
   logSet: typeof logSet;
   deleteSet: typeof deleteSet;
-  updateTargetSets: typeof updateTargetSets;
+  updateTarget: typeof updateTarget;
+  reorderExercises: typeof reorderExercises;
   addExerciseToDay: typeof addExerciseToDay;
   removeExerciseFromDay: typeof removeExerciseFromDay;
 };
 
-const serverActions: WorkoutActions = { logSet, deleteSet, updateTargetSets, addExerciseToDay, removeExerciseFromDay };
+const serverActions: WorkoutActions = {
+  logSet,
+  deleteSet,
+  updateTarget,
+  reorderExercises,
+  addExerciseToDay,
+  removeExerciseFromDay,
+};
 
 type LogProps = {
   date: string;
@@ -59,17 +88,118 @@ export function WorkoutLog({
   actions = serverActions,
   ...props
 }: Omit<LogProps, "actions"> & { exercises: ExerciseEntry[]; actions?: WorkoutActions }) {
-  const plannedCount = exercises.filter((exercise) => exercise.planned).length;
+  const planned = exercises.filter((exercise) => exercise.planned);
+  const [order, showOrder] = useOptimistic(planned.map((exercise) => exercise.exerciseId));
+  // The order while an exercise is being dragged. It's saved when the exercise is dropped.
+  const [dragging, setDragging] = useState<{ id: string; order: string[] }>();
+  const [error, setError] = useState<string>();
+  const [, startTransition] = useTransition();
+  const list = useRef<HTMLDivElement>(null);
+
+  const shown = dragging?.order ?? order;
+  const rank = (exercise: ExerciseEntry) => {
+    const index = shown.indexOf(exercise.exerciseId);
+    return index < 0 ? shown.length : index;
+  };
+  const sorted = planned.toSorted((a, b) => rank(a) - rank(b));
+  const ids = sorted.map((exercise) => exercise.exerciseId);
+  // Only the workout's own exercises can be moved; ones logged without being part of it stay last.
+  const canReorder = props.editable && sorted.length > 1;
+
+  function saveOrder(next: string[]) {
+    setError(undefined);
+    startTransition(async () => {
+      showOrder(next);
+      const result = await actions.reorderExercises(props.dayId, next);
+      if (result.error) setError(result.error);
+    });
+  }
+
+  /** Moves an exercise one place up or down with the arrow keys, for keyboards and screen readers. */
+  function nudge(id: string, event: KeyboardEvent<HTMLButtonElement>) {
+    const by = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+    const from = ids.indexOf(id);
+    if (!by || !ids[from + by]) return;
+    event.preventDefault();
+    const next = [...ids];
+    [next[from], next[from + by]] = [next[from + by], next[from]];
+    saveOrder(next);
+    // Moving the card in the page can drop focus from its handle.
+    const handle = event.currentTarget;
+    requestAnimationFrame(() => handle.focus());
+  }
+
+  /** Follows the pointer from an exercise's handle, moving the exercise as it passes the others. */
+  function startDrag(id: string, event: PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    // Stops text being selected while dragging.
+    event.preventDefault();
+    const start = ids;
+    let current = ids;
+    let pointerY = event.clientY;
+    setDragging({ id, order: current });
+
+    function follow() {
+      // Scroll near the top or bottom of the screen, so a long workout can be reordered in one go.
+      if (pointerY < 80) scrollBy(0, -10);
+      else if (pointerY > innerHeight - 80) scrollBy(0, 10);
+      // The dragged exercise goes after every other one whose middle is above the pointer.
+      const middles = new Map(
+        [...list.current!.querySelectorAll<HTMLElement>("[data-exercise]")].map((card) => {
+          const box = card.getBoundingClientRect();
+          return [card.dataset.exercise, box.top + box.height / 2];
+        })
+      );
+      const others = current.filter((other) => other !== id);
+      const index = others.filter((other) => (middles.get(other) ?? 0) < pointerY).length;
+      const next = [...others.slice(0, index), id, ...others.slice(index)];
+      if (next.some((other, position) => other !== current[position])) {
+        current = next;
+        setDragging({ id, order: next });
+      }
+      frame = requestAnimationFrame(follow);
+    }
+    let frame = requestAnimationFrame(follow);
+
+    const move = (moved: globalThis.PointerEvent) => {
+      pointerY = moved.clientY;
+    };
+    const end = (ended: globalThis.PointerEvent) => {
+      cancelAnimationFrame(frame);
+      removeEventListener("pointermove", move);
+      removeEventListener("pointerup", end);
+      removeEventListener("pointercancel", end);
+      setDragging(undefined);
+      if (ended.type === "pointerup" && current.some((other, position) => other !== start[position])) saveOrder(current);
+    };
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", end);
+    addEventListener("pointercancel", end);
+  }
 
   return (
-    <div className="space-y-4">
-      {exercises.map((exercise, index) => (
+    <div ref={list} className="space-y-4">
+      {error && (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      )}
+      {[...sorted, ...exercises.filter((exercise) => !exercise.planned)].map((exercise, index) => (
         <ExerciseCard
           key={exercise.exerciseId}
           exercise={exercise}
           number={index + 1}
-          isLastPlanned={exercise.planned && plannedCount === 1}
+          isLastPlanned={exercise.planned && planned.length === 1}
           actions={actions}
+          dragging={dragging?.id === exercise.exerciseId}
+          handle={
+            canReorder && exercise.planned
+              ? {
+                  onPointerDown: (event) => startDrag(exercise.exerciseId, event),
+                  onKeyDown: (event) => nudge(exercise.exerciseId, event),
+                }
+              : undefined
+          }
           {...props}
         />
       ))}
@@ -95,13 +225,25 @@ function ExerciseCard({
   unit,
   editable,
   actions,
-}: LogProps & { exercise: ExerciseEntry; number: number; isLastPlanned: boolean }) {
+  dragging,
+  handle,
+}: LogProps & {
+  exercise: ExerciseEntry;
+  number: number;
+  isLastPlanned: boolean;
+  dragging: boolean;
+  /** Present when the exercise can be dragged to a new place in the workout. */
+  handle?: {
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
+    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
+  };
+}) {
   const [sets, changeSets] = useOptimistic(
     exercise.sets,
     (current: LoggedSet[], change: { add: LoggedSet } | { remove: string }) =>
       "add" in change ? [...current, change.add] : current.filter((set) => set.id !== change.remove)
   );
-  const [targetSets, showTargetSets] = useOptimistic(exercise.target?.sets);
+  const [target, showTarget] = useOptimistic(exercise.target);
   // Start from the last set logged today, else last session's first set, else the target.
   const previous = exercise.sets.at(-1) ?? exercise.lastTime?.sets[0];
   // Bodyweight sets (0) leave the field empty so it shows the "BW" placeholder.
@@ -112,8 +254,8 @@ function ExerciseCard({
   const [, startTransition] = useTransition();
 
   const canEdit = editable && exercise.planned;
-  const complete = targetSets !== undefined && sets.length >= targetSets;
-  const remaining = targetSets !== undefined ? Math.max(0, targetSets - sets.length) : 0;
+  const complete = target !== undefined && sets.length >= target.sets;
+  const remaining = target !== undefined ? Math.max(0, target.sets - sets.length) : 0;
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -150,11 +292,13 @@ function ExerciseCard({
     });
   }
 
-  function changeTarget(next: number) {
+  function changeTarget(next: { sets: number; reps: number }) {
     setError(undefined);
+    // Until a set is logged, the reps field follows the target.
+    if (sets.length === 0) setReps(String(next.reps));
     startTransition(async () => {
-      showTargetSets(next);
-      const result = await actions.updateTargetSets(dayId, exercise.exerciseId, next);
+      showTarget(next);
+      const result = await actions.updateTarget(dayId, exercise.exerciseId, next.sets, next.reps);
       if (result.error) setError(result.error);
     });
   }
@@ -169,41 +313,57 @@ function ExerciseCard({
 
   return (
     <article
+      data-exercise={exercise.exerciseId}
       aria-busy={removing}
       className={`rounded-3xl border bg-card p-5 transition sm:p-6 ${complete ? "border-accent-ink/40" : "border-border"} ${
         removing ? "opacity-50" : ""
-      }`}
+      } ${dragging ? "relative z-10 shadow-2xl ring-2 ring-accent/60" : ""}`}
     >
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="flex items-baseline gap-2.5 text-lg font-semibold tracking-tight">
-            <span className="font-mono text-xs font-normal text-muted-foreground">{String(number).padStart(2, "0")}</span>
-            <span className="truncate">{exercise.name}</span>
-            {complete && (
-              <span className="inline-flex shrink-0 items-center gap-1 self-center rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-accent-foreground">
-                <CheckIcon className="size-3" strokeWidth={3} />
-                Done
-              </span>
-            )}
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {exercise.lastTime ? (
-              <>
-                Last time, {formatDate(exercise.lastTime.date, { month: "short", day: "numeric" })}:{" "}
-                <span className="font-mono text-foreground">{summarize(exercise.lastTime.sets, unit)}</span>
-              </>
-            ) : exercise.planned ? (
-              "First time. Pick a weight you can move with good form."
-            ) : (
-              `Logged here, but not part of ${dayName}.`
-            )}
-          </p>
+      {/* On narrow screens the target and delete button move below the name. */}
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 basis-56 items-start gap-1">
+          {handle && (
+            <button
+              type="button"
+              {...handle}
+              aria-label={`Move ${exercise.name}. Drag, or use the up and down arrow keys.`}
+              className={`-ml-2 grid size-8 shrink-0 touch-none select-none place-items-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground ${
+                dragging ? "cursor-grabbing" : "cursor-grab"
+              }`}
+            >
+              <GripIcon className="size-4" />
+            </button>
+          )}
+          <div className="min-w-0">
+            <h3 className="flex items-baseline gap-2.5 text-lg font-semibold tracking-tight">
+              <span className="font-mono text-xs font-normal text-muted-foreground">{String(number).padStart(2, "0")}</span>
+              <span className="truncate">{exercise.name}</span>
+              {complete && (
+                <span className="inline-flex shrink-0 items-center gap-1 self-center rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-accent-foreground">
+                  <CheckIcon className="size-3" strokeWidth={3} />
+                  Done
+                </span>
+              )}
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {exercise.lastTime ? (
+                <>
+                  Last time, {formatDate(exercise.lastTime.date, { month: "short", day: "numeric" })}:{" "}
+                  <span className="font-mono text-foreground">{summarize(exercise.lastTime.sets, unit)}</span>
+                </>
+              ) : exercise.planned ? (
+                "First time. Pick a weight you can move with good form."
+              ) : (
+                `Logged here, but not part of ${dayName}.`
+              )}
+            </p>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {exercise.target && targetSets !== undefined && (
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {target && (
             <TargetControl
-              sets={targetSets}
-              reps={exercise.target.reps}
+              sets={target.sets}
+              reps={target.reps}
               editable={canEdit}
               exerciseName={exercise.name}
               onChange={changeTarget}
@@ -278,7 +438,7 @@ function ExerciseCard({
   );
 }
 
-/** "4 × 8" with − and + to change the number of sets for this exercise. */
+/** "4 × 8", with − and + to change the number of sets and a list to pick the reps. */
 function TargetControl({
   sets,
   reps,
@@ -290,26 +450,53 @@ function TargetControl({
   reps: number;
   editable: boolean;
   exerciseName: string;
-  onChange: (sets: number) => void;
+  onChange: (target: { sets: number; reps: number }) => void;
 }) {
-  const label = (
-    <span className="px-1 font-mono text-xs font-medium" title={`${sets} sets of ${reps} reps`}>
-      {sets} × {reps}
-    </span>
-  );
-  if (!editable) return <span className="rounded-full bg-muted px-2.5 py-1">{label}</span>;
+  if (!editable) {
+    return (
+      <span className="rounded-full bg-muted px-2.5 py-1">
+        <span className="px-1 font-mono text-xs font-medium" title={`${sets} sets of ${reps} reps`}>
+          {sets} × {reps}
+        </span>
+      </span>
+    );
+  }
 
   const button =
     "grid size-7 place-items-center rounded-full text-muted-foreground transition hover:bg-background hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent";
   return (
-    <div role="group" aria-label={`Target sets for ${exerciseName}`} className="flex items-center rounded-full bg-muted p-0.5">
-      <button type="button" onClick={() => onChange(sets - 1)} disabled={sets <= 1} aria-label="One fewer set" className={button}>
+    <div
+      role="group"
+      aria-label={`Target for ${exerciseName}`}
+      className="flex items-center rounded-full bg-muted p-0.5 font-mono text-xs font-medium"
+    >
+      <button type="button" onClick={() => onChange({ sets: sets - 1, reps })} disabled={sets <= 1} aria-label="One fewer set" className={button}>
         <MinusIcon className="size-3.5" />
       </button>
-      <span aria-live="polite">{label}</span>
-      <button type="button" onClick={() => onChange(sets + 1)} disabled={sets >= 10} aria-label="One more set" className={button}>
+      <span aria-live="polite" aria-label={`${sets} sets`} className="px-0.5">
+        {sets}
+      </span>
+      <button type="button" onClick={() => onChange({ sets: sets + 1, reps })} disabled={sets >= 10} aria-label="One more set" className={button}>
         <PlusIcon className="size-3.5" />
       </button>
+      <span aria-hidden="true" className="text-muted-foreground">
+        ×
+      </span>
+      <span className="relative flex items-center">
+        <select
+          value={reps}
+          onChange={(event) => onChange({ sets, reps: Number(event.target.value) })}
+          aria-label="Reps per set"
+          className="h-7 cursor-pointer appearance-none rounded-full bg-transparent pl-1.5 pr-5 transition hover:bg-background focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          {Array.from({ length: 50 }, (_, index) => (
+            <option key={index} value={index + 1}>
+              {index + 1}
+            </option>
+          ))}
+        </select>
+        <ChevronDownIcon className="pointer-events-none absolute right-1.5 size-3 text-muted-foreground" />
+      </span>
     </div>
   );
 }
