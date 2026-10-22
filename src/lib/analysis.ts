@@ -28,13 +28,13 @@ const STEADY_WEIGHT = 0.005
 const RECENT_WEIGH_IN = 14
 
 /** Muscles that need direct work; the rest get enough from compound lifts. */
-const MAJOR: Muscle[] = ['chest', 'back', 'sideDelts', 'rearDelts', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves']
+const MAJOR: Muscle[] = ['chest', 'lats', 'midTraps', 'sideDelts', 'rearDelts', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves']
 
 /** Sets of `top` per set of `bottom` that a balanced program lands between. */
 const RATIOS: { label: string; top: Muscle[]; bottom: Muscle[]; min: number; max: number; why: string }[] = [
   {
-    label: 'Back vs chest',
-    top: ['back'],
+    label: 'Lats vs chest',
+    top: ['lats'],
     bottom: ['chest'],
     min: 0.8,
     max: Infinity,
@@ -43,7 +43,7 @@ const RATIOS: { label: string; top: Muscle[]; bottom: Muscle[]; min: number; max
   {
     label: 'Legs vs upper body',
     top: ['quads', 'hamstrings'],
-    bottom: ['chest', 'back'],
+    bottom: ['chest', 'lats'],
     min: 0.5,
     max: Infinity,
     why: 'Your legs are half your muscle; most programs give them at least half the work.',

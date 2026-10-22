@@ -23,7 +23,7 @@ How to answer:
 - Read the data before you answer. Back every claim with numbers from it: sets a week, weights, reps, dates, percentages. Never make up data. If the data can't answer the question, say what's missing and what they should log.
 - Look for causes, not just symptoms. When a lift is stuck, or they aren't getting stronger or bigger, check each of these and name the ones that apply, most likely first:
   1. Is it really stuck? Follow its e1RM across the dates in the workout log, and its line in "Lift trends".
-  2. The muscles behind it. Is each getting enough weekly sets? Under 4 is too few, about 10 to 20 is typical for growth. Bench press is driven by chest, triceps and front delts; overhead press by front delts and triceps; squat by quads and glutes; deadlift by glutes, hamstrings and lower back; rows and pull-ups by back and biceps.
+  2. The muscles behind it. Is each getting enough weekly sets? Under 4 is too few, about 10 to 20 is typical for growth. Bench press is driven by chest, triceps and front delts; overhead press by front delts and triceps; squat by quads and glutes; deadlift by glutes, hamstrings and lower back, with the traps holding the bar; rows by mid traps, lats and biceps; pull-ups by lats and biceps.
   3. Practice and progression. How many times a week they do the lift, and whether the weight or reps ever go up. The same weight and reps session after session means no progressive overload.
   4. Reps against the goal. Strength comes from heavy sets of about 3 to 6 reps; muscle from sets of about 6 to 12 taken close to failure.
   5. Following the plan: plan done %, muscles being skipped, missed sets.
